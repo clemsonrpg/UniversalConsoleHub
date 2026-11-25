@@ -4,11 +4,12 @@ use std::sync::{Arc, Mutex};
 
 use rusqlite::{params, Connection, OpenFlags};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use crate::domain::error::DomainError;
 use crate::domain::player::now_utc_rfc3339;
 
-use super::migrations::apply_migrations;
+use super::migrations::{apply_migrations, check_schema_version_compatible, LATEST_SCHEMA_VERSION};
 use super::seed::seed_defaults;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -25,6 +26,29 @@ pub struct BackupReport {
 pub struct RestoreReport {
     pub source_backup_path: PathBuf,
     pub restored_db_path: PathBuf,
+    pub integrity_ok: bool,
+    pub schema_version: i64,
+    pub restored_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupInspectionReport {
+    pub backup_path: PathBuf,
+    pub size_bytes: u64,
+    pub integrity_ok: bool,
+    pub schema_version: i64,
+    pub profiles_count: i64,
+    pub games_count: i64,
+    pub inspected_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveRestoreReport {
+    pub source_backup_path: PathBuf,
+    pub restored_db_path: PathBuf,
+    pub pre_restore_snapshot_path: PathBuf,
     pub integrity_ok: bool,
     pub schema_version: i64,
     pub restored_at: String,
@@ -70,6 +94,129 @@ fn run_integrity_checks(conn: &Connection) -> Result<bool, DomainError> {
     Ok(fk_errors == 0)
 }
 
+fn sidecar_path(db_path: &Path, suffix: &str) -> PathBuf {
+    let mut os = db_path.as_os_str().to_os_string();
+    os.push(suffix);
+    PathBuf::from(os)
+}
+
+fn remove_wal_sidecars(db_path: &Path) -> Result<(), DomainError> {
+    for suffix in ["-wal", "-shm"] {
+        let sidecar = sidecar_path(db_path, suffix);
+        if sidecar.exists() {
+            fs::remove_file(&sidecar).map_err(|e| {
+                DomainError::Io(format!(
+                    "failed to remove stale sidecar '{}': {e}",
+                    sidecar.display()
+                ))
+            })?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_and_stage_backup(
+    backup_path: &Path,
+    target_db_path: &Path,
+) -> Result<(PathBuf, i64), DomainError> {
+    let inspection = DatabaseManager::inspect_backup(backup_path)?;
+    if !inspection.integrity_ok {
+        return Err(DomainError::Database(
+            "backup file failed PRAGMA quick_check / foreign_key_check; restore aborted"
+                .to_string(),
+        ));
+    }
+
+    if let Some(parent) = target_db_path.parent() {
+        fs::create_dir_all(parent).map_err(|e| {
+            DomainError::Io(format!(
+                "failed to create target directory '{}': {e}",
+                parent.display()
+            ))
+        })?;
+    }
+
+    let staged_path = sidecar_path(target_db_path, ".restore.tmp");
+    if staged_path.exists() {
+        fs::remove_file(&staged_path)
+            .map_err(|e| DomainError::Io(format!("failed to clear staged restore file: {e}")))?;
+    }
+
+    let staged_str = staged_path
+        .to_str()
+        .ok_or_else(|| DomainError::Validation("target path must be valid UTF-8".to_string()))?;
+
+    let src_conn = Connection::open_with_flags(
+        backup_path,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .map_err(|e| DomainError::Database(format!("invalid SQLite backup file: {e}")))?;
+
+    src_conn
+        .execute("VACUUM INTO ?1", params![staged_str])
+        .map_err(|e| DomainError::Database(format!("failed to stage restore copy: {e}")))?;
+    drop(src_conn);
+
+    Ok((staged_path, inspection.schema_version))
+}
+
+fn swap_staged_file_with_rollback(
+    staged_path: &Path,
+    target_db_path: &Path,
+    rollback_path: &Path,
+) -> Result<(), DomainError> {
+    if rollback_path.exists() {
+        fs::remove_file(rollback_path).map_err(|e| {
+            DomainError::Io(format!(
+                "failed to remove stale rollback file '{}': {e}",
+                rollback_path.display()
+            ))
+        })?;
+    }
+
+    remove_wal_sidecars(target_db_path)?;
+
+    if target_db_path.exists() {
+        fs::rename(target_db_path, rollback_path).map_err(|e| {
+            DomainError::Io(format!(
+                "failed to move current database '{}' to rollback slot: {e}",
+                target_db_path.display()
+            ))
+        })?;
+    }
+
+    if let Err(err) = fs::rename(staged_path, target_db_path) {
+        // Attempt immediate rollback of the original DB file
+        if rollback_path.exists() && !target_db_path.exists() {
+            let _ = fs::rename(rollback_path, target_db_path);
+        }
+        return Err(DomainError::Io(format!(
+            "failed to promote restored database '{}': {err}",
+            target_db_path.display()
+        )));
+    }
+
+    Ok(())
+}
+
+fn rollback_target_file(
+    target_db_path: &Path,
+    rollback_path: &Path,
+    fallback_snapshot: Option<&Path>,
+) {
+    let _ = remove_wal_sidecars(target_db_path);
+    if target_db_path.exists() {
+        let _ = fs::remove_file(target_db_path);
+    }
+    if rollback_path.exists() {
+        let _ = fs::rename(rollback_path, target_db_path);
+    } else if let Some(snapshot) = fallback_snapshot {
+        if snapshot.is_file() {
+            let _ = fs::copy(snapshot, target_db_path);
+        }
+    }
+}
+
 impl DatabaseManager {
     pub fn open(path: &Path) -> Result<Self, DomainError> {
         if let Some(parent) = path.parent() {
@@ -79,6 +226,20 @@ impl DatabaseManager {
                     parent.display()
                 ))
             })?;
+        }
+
+        // Check future schema compatibility BEFORE enabling WAL so an incompatible
+        // future-version database file is never modified on disk.
+        if path.is_file() {
+            let ro = Connection::open_with_flags(
+                path,
+                OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+            )
+            .map_err(|e| {
+                DomainError::Database(format!("failed to open SQLite '{}': {e}", path.display()))
+            })?;
+            let _ = check_schema_version_compatible(&ro)?;
+            drop(ro);
         }
 
         let mut conn = Connection::open(path).map_err(|e| {
@@ -192,12 +353,8 @@ impl DatabaseManager {
         })
     }
 
-    /// Validates a backup snapshot and safely restores it onto `target_db_path`.
-    /// Callers must ensure active write handles to `target_db_path` are closed before restoring.
-    pub fn restore_backup(
-        backup_path: &Path,
-        target_db_path: &Path,
-    ) -> Result<RestoreReport, DomainError> {
+    /// Inspects a SQLite backup file in read-only mode before any destructive operation.
+    pub fn inspect_backup(backup_path: &Path) -> Result<BackupInspectionReport, DomainError> {
         if !backup_path.is_file() {
             return Err(DomainError::NotFound(format!(
                 "backup file not found: '{}'",
@@ -205,97 +362,218 @@ impl DatabaseManager {
             )));
         }
 
-        // 1. Validate source backup integrity & schema version in read-only mode
-        let src_conn = Connection::open_with_flags(
+        let metadata = fs::metadata(backup_path)
+            .map_err(|e| DomainError::Io(format!("failed to stat backup file: {e}")))?;
+
+        let conn = Connection::open_with_flags(
             backup_path,
             OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )
         .map_err(|e| DomainError::Database(format!("invalid SQLite backup file: {e}")))?;
-        configure_connection(&src_conn, false)?;
 
-        let src_ok = run_integrity_checks(&src_conn)?;
-        if !src_ok {
+        conn.pragma_update(None, "foreign_keys", "ON")
+            .map_err(|e| DomainError::Database(format!("failed to enable foreign_keys: {e}")))?;
+
+        let integrity_ok = run_integrity_checks(&conn)?;
+        if !integrity_ok {
             return Err(DomainError::Database(
-                "backup file failed PRAGMA quick_check / foreign_key_check; restore aborted"
-                    .to_string(),
+                "backup file failed PRAGMA quick_check / foreign_key_check".to_string(),
             ));
         }
 
-        let schema_version: i64 = src_conn
+        let schema_version: i64 = conn
             .query_row("PRAGMA user_version;", [], |r| r.get(0))
             .map_err(|e| DomainError::Database(format!("failed to read backup version: {e}")))?;
+
         if schema_version < 1 {
             return Err(DomainError::Validation(format!(
                 "backup schema version {schema_version} is not a valid Universal Console Hub database"
             )));
         }
+        if schema_version > LATEST_SCHEMA_VERSION {
+            return Err(DomainError::Validation(format!(
+                "backup schema version {schema_version} is newer than supported version {LATEST_SCHEMA_VERSION}"
+            )));
+        }
 
-        if let Some(parent) = target_db_path.parent() {
-            fs::create_dir_all(parent).map_err(|e| {
-                DomainError::Io(format!(
-                    "failed to create target directory '{}': {e}",
-                    parent.display()
+        let profiles_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM profiles", [], |r| r.get(0))
+            .map_err(|e| {
+                DomainError::Validation(format!(
+                    "backup is missing Universal Console Hub 'profiles' table: {e}"
                 ))
             })?;
-        }
-
-        // 2. Stage clean copy via VACUUM INTO a temp file beside target, then swap cleanly
-        let staged_path = target_db_path.with_extension("restore.tmp");
-        if staged_path.exists() {
-            fs::remove_file(&staged_path).map_err(|e| {
-                DomainError::Io(format!("failed to clear staged restore file: {e}"))
-            })?;
-        }
-        let staged_str = staged_path.to_str().ok_or_else(|| {
-            DomainError::Validation("target path must be valid UTF-8".to_string())
-        })?;
-        src_conn
-            .execute("VACUUM INTO ?1", params![staged_str])
-            .map_err(|e| DomainError::Database(format!("failed to stage restore copy: {e}")))?;
-        drop(src_conn);
-
-        // 3. Remove stale WAL/SHM sidecars so SQLite never replays old WAL frames over restored DB
-        for suffix in ["-wal", "-shm"] {
-            let mut sidecar = target_db_path.as_os_str().to_os_string();
-            sidecar.push(suffix);
-            let sidecar_path = PathBuf::from(sidecar);
-            if sidecar_path.exists() {
-                fs::remove_file(&sidecar_path).map_err(|e| {
-                    DomainError::Io(format!(
-                        "failed to remove stale sidecar '{}': {e}",
-                        sidecar_path.display()
-                    ))
-                })?;
-            }
-        }
-        if target_db_path.exists() {
-            fs::remove_file(target_db_path).map_err(|e| {
-                DomainError::Io(format!(
-                    "failed to replace target database '{}': {e}",
-                    target_db_path.display()
+        let games_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM games", [], |r| r.get(0))
+            .map_err(|e| {
+                DomainError::Validation(format!(
+                    "backup is missing Universal Console Hub 'games' table: {e}"
                 ))
             })?;
-        }
-        fs::rename(&staged_path, target_db_path).map_err(|e| {
-            DomainError::Io(format!(
-                "failed to promote restored database '{}': {e}",
-                target_db_path.display()
-            ))
-        })?;
 
-        // 4. Re-open restored database and confirm integrity
-        let verify_conn = Connection::open(target_db_path).map_err(|e| {
-            DomainError::Database(format!("failed to verify restored database: {e}"))
-        })?;
-        configure_connection(&verify_conn, true)?;
-        let integrity_ok = run_integrity_checks(&verify_conn)?;
-
-        Ok(RestoreReport {
-            source_backup_path: backup_path.to_path_buf(),
-            restored_db_path: target_db_path.to_path_buf(),
+        Ok(BackupInspectionReport {
+            backup_path: backup_path.to_path_buf(),
+            size_bytes: metadata.len(),
             integrity_ok,
             schema_version,
-            restored_at: now_utc_rfc3339(),
+            profiles_count,
+            games_count,
+            inspected_at: now_utc_rfc3339(),
         })
+    }
+
+    /// Validates a backup snapshot and safely restores it onto `target_db_path`.
+    /// Callers must ensure active write handles to `target_db_path` are closed before restoring.
+    pub fn restore_backup(
+        backup_path: &Path,
+        target_db_path: &Path,
+    ) -> Result<RestoreReport, DomainError> {
+        let (staged_path, _src_version) = validate_and_stage_backup(backup_path, target_db_path)?;
+        let rollback_path = sidecar_path(target_db_path, ".rollback.tmp");
+
+        swap_staged_file_with_rollback(&staged_path, target_db_path, &rollback_path)?;
+
+        let verify_result = (|| -> Result<i64, DomainError> {
+            let mut verify_conn = Connection::open(target_db_path).map_err(|e| {
+                DomainError::Database(format!("failed to verify restored database: {e}"))
+            })?;
+            configure_connection(&verify_conn, true)?;
+            let final_version = apply_migrations(&mut verify_conn)?;
+            seed_defaults(&mut verify_conn)?;
+            if !run_integrity_checks(&verify_conn)? {
+                return Err(DomainError::Database(
+                    "restored database failed post-restore integrity verification".to_string(),
+                ));
+            }
+            Ok(final_version)
+        })();
+
+        match verify_result {
+            Ok(final_version) => {
+                if rollback_path.exists() {
+                    let _ = fs::remove_file(&rollback_path);
+                }
+                Ok(RestoreReport {
+                    source_backup_path: backup_path.to_path_buf(),
+                    restored_db_path: target_db_path.to_path_buf(),
+                    integrity_ok: true,
+                    schema_version: final_version,
+                    restored_at: now_utc_rfc3339(),
+                })
+            }
+            Err(err) => {
+                rollback_target_file(target_db_path, &rollback_path, None);
+                let _ = fs::remove_file(&staged_path);
+                Err(err)
+            }
+        }
+    }
+
+    /// Windows-safe live restore while this `DatabaseManager` holds an active WAL connection:
+    /// 1. Validates the source backup integrally before touching active data.
+    /// 2. Creates a verified pre-restore snapshot (`pre_restore_<utc>.db`) via `VACUUM INTO`.
+    /// 3. Stages a clean copy of the backup to `.restore.tmp`.
+    /// 4. Under exclusive `Mutex<Connection>`, drops the active OS connection handle completely.
+    /// 5. Swaps the database file with `.rollback.tmp` protection and clears stale `-wal`/`-shm`.
+    /// 6. Reopens with WAL + FK, auto-migrates if restoring a v1 backup, verifies integrity,
+    ///    and automatically rolls back to the original database on any error.
+    pub fn restore_from_backup_live(
+        &self,
+        backup_path: &Path,
+        safety_backup_dir: &Path,
+    ) -> Result<LiveRestoreReport, DomainError> {
+        let target_db_path = self.db_path.as_ref().ok_or_else(|| {
+            DomainError::Validation(
+                "live restore is only supported for file-backed SQLite databases".to_string(),
+            )
+        })?;
+
+        // 1. Validate source backup completely before creating snapshots or touching live DB
+        let _ = Self::inspect_backup(backup_path)?;
+
+        if let (Ok(canon_backup), Ok(canon_target)) = (
+            fs::canonicalize(backup_path),
+            fs::canonicalize(target_db_path),
+        ) {
+            if canon_backup == canon_target {
+                return Err(DomainError::Validation(
+                    "backup source cannot be the active live database file".to_string(),
+                ));
+            }
+        }
+
+        // 2. Create a consistent pre-restore safety snapshot of the active WAL database
+        fs::create_dir_all(safety_backup_dir).map_err(|e| {
+            DomainError::Io(format!(
+                "failed to prepare pre-restore snapshot directory '{}': {e}",
+                safety_backup_dir.display()
+            ))
+        })?;
+        let ts = now_utc_rfc3339().replace(':', "-");
+        let short_id = &Uuid::new_v4().simple().to_string()[..8];
+        let snapshot_path = safety_backup_dir.join(format!("pre_restore_{ts}_{short_id}.db"));
+        self.create_backup(&snapshot_path)?;
+
+        // 3. Stage clean copy of validated backup beside target database
+        let (staged_path, _src_version) = validate_and_stage_backup(backup_path, target_db_path)?;
+        let rollback_path = sidecar_path(target_db_path, ".rollback.tmp");
+
+        // 4. Exclusively lock & release all OS file handles to the active WAL database
+        let mut guard = self
+            .conn
+            .lock()
+            .map_err(|_| DomainError::Database("database mutex poisoned".to_string()))?;
+
+        let placeholder = Connection::open_in_memory().map_err(|e| {
+            DomainError::Database(format!("failed to create temporary placeholder conn: {e}"))
+        })?;
+        let old_conn = std::mem::replace(&mut *guard, placeholder);
+        drop(old_conn);
+
+        // 5 & 6. Swap files, reopen with WAL/FK, migrate v1 backups if needed, verify integrity
+        let swap_and_reopen = (|| -> Result<(Connection, i64), DomainError> {
+            swap_staged_file_with_rollback(&staged_path, target_db_path, &rollback_path)?;
+
+            let mut new_conn = Connection::open(target_db_path).map_err(|e| {
+                DomainError::Database(format!("failed to reopen restored database: {e}"))
+            })?;
+            configure_connection(&new_conn, true)?;
+            let final_version = apply_migrations(&mut new_conn)?;
+            seed_defaults(&mut new_conn)?;
+            if !run_integrity_checks(&new_conn)? {
+                return Err(DomainError::Database(
+                    "restored database failed post-restore PRAGMA quick_check / foreign_key_check"
+                        .to_string(),
+                ));
+            }
+            Ok((new_conn, final_version))
+        })();
+
+        match swap_and_reopen {
+            Ok((new_conn, final_version)) => {
+                *guard = new_conn;
+                if rollback_path.exists() {
+                    let _ = fs::remove_file(&rollback_path);
+                }
+                Ok(LiveRestoreReport {
+                    source_backup_path: backup_path.to_path_buf(),
+                    restored_db_path: target_db_path.to_path_buf(),
+                    pre_restore_snapshot_path: snapshot_path,
+                    integrity_ok: true,
+                    schema_version: final_version,
+                    restored_at: now_utc_rfc3339(),
+                })
+            }
+            Err(err) => {
+                // Automatic rollback recovery: restore original file and reopen active connection
+                let _ = fs::remove_file(&staged_path);
+                rollback_target_file(target_db_path, &rollback_path, Some(&snapshot_path));
+                if let Ok(recovered_conn) = Connection::open(target_db_path) {
+                    let _ = configure_connection(&recovered_conn, true);
+                    *guard = recovered_conn;
+                }
+                Err(err)
+            }
+        }
     }
 }
