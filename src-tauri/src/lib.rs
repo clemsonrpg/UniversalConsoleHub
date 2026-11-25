@@ -1,4 +1,5 @@
 pub mod domain;
+pub mod infrastructure;
 
 use serde::Serialize;
 
