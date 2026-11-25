@@ -361,7 +361,7 @@ impl AppServices {
 
         let readiness = adapter.evaluate_boot_readiness(&install, fw_report.as_ref());
         let diagnostic = if readiness.system_files_present && readiness.command_buildable {
-            "RPCS3 detectado com arquivos de sistema presentes e comando seguro pronto; confirmação real em runtime do XMB reservada à Fase 4.".to_string()
+            "RPCS3 detectado com arquivos de sistema presentes e comando seguro pronto; confirmação real em runtime do XMB reservada à Fase 3.".to_string()
         } else {
             "RPCS3 detectado, porém arquivos de sistema (dev_flash/vsh/module/vsh.self e dev_hdd0) ainda estão ausentes.".to_string()
         };

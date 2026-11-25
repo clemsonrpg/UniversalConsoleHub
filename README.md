@@ -33,5 +33,6 @@ Universal Console Hub é um aplicativo desktop local-first (Tauri 2 + Rust + SQL
 
 ## Status Atual
 
-- **Fase 1 (Project Foundation):** Concluída e auditada no executável standalone Windows (`10` commits preservados em `main`: `d7b059a..00488f8`) — fundação Tauri 2/Rust/React/SQLite (`19` tabelas `STRICT`), contrato de adaptadores, preparação RPCS3 em 4 estágios, Design System "Obsidian Hardware" e telas base.
-- **Fase 2 (Universal Player, Console Environments & Sessions Foundation — Opção A):** Planejamento arquitetural e schema (`Migration 0002`, `19 → 22` tabelas `STRICT` + índices aditivos) consolidados e prontos para execução sequencial em 10 Tasks sob TDD.
+- **Fase 1 (Project Foundation):** Concluída e auditada (`10` commits preservados em `main`: `d7b059a..00488f8`) — fundação Tauri 2/Rust/React/SQLite (`19` tabelas `STRICT`), contrato de adaptadores, preparação RPCS3 em 4 estágios, Design System "Obsidian Hardware" e telas base.
+- **Fase 2 (Universal Player, Console Environments & Sessions Foundation — Opção A):** Concluída e auditada no executável standalone Windows — `Migration 0002` (`22` tabelas `STRICT` + índices aditivos), ambientes independentes por console (`ConsoleEnvironmentPage`), scanner assíncrono com parser binário `PARAM.SFO`, `CoverCache` seguro via `protocol-asset`, `GameDetailsPage`, `StatisticsPage`, recuperação idempotente de sessões órfãs via `last_heartbeat_at` e restauração SQLite ao vivo pela UI com confirmação e rollback automático.
+- **Próxima Fase (Fase 3 — Opção A):** Primeiro console 100% jogável — **PlayStation 3 via RPCS3** (boot real do XMB, execução direta de jogos PS3, monitoramento de sessão ao vivo e retorno ao Hub).

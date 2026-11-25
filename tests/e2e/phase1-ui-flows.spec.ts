@@ -160,6 +160,25 @@ test.beforeEach(async ({ page }) => {
       kind: 'injected_test',
       async invoke(command: string, args?: Record<string, unknown>) {
         if (command === 'get_hub_bootstrap') return structuredClone(state);
+        if (command === 'get_console_environment') {
+          const slug = String(args?.slug ?? '');
+          const consoleRec = state.consoles.find((c) => c.slug === slug);
+          const isAuth =
+            consoleRec?.capabilities.supportedStates.includes('FULL_SYSTEM_BOOT') &&
+            consoleRec?.capabilities.supportedStates.includes('ORIGINAL_DASHBOARD');
+          return {
+            console: structuredClone(consoleRec),
+            emulator: structuredClone(state.emulators.find((e) => e.consoleSlug === slug) ?? null),
+            environmentMode: isAuth ? 'authentic_system_capable' : 'integrated_alternative_only',
+            games: structuredClone(state.games.filter((g) => g.consoleSlug === slug)),
+            scanPaths: [],
+            settings: [],
+            firmwareRecords: structuredClone(state.firmwareRecords),
+            runtimeVerifications: [],
+            rpcs3Inspection: slug === 'ps3' ? structuredClone(state.rpcs3Inspection) : null,
+          };
+        }
+        if (command === 'list_database_backups') return [];
         if (command === 'get_console_details') {
           const slug = String(args?.slug ?? '');
           const consoleRec = state.consoles.find((c) => c.slug === slug);
@@ -285,10 +304,11 @@ test('navigates all Phase 1 sections, displays honest multi-capability badges, a
   await expect(page.getByRole('heading', { name: 'Visão Geral do Hub' })).toBeVisible();
   await expect(page.getByText('Transporte: Transporte de Teste UI')).toBeVisible();
 
-  // Consoles & PS3 multi-capability details
+  // Consoles & PS3 multi-capability environment
   await page.getByRole('button', { name: 'Consoles', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Coleção de Consoles' })).toBeVisible();
   await page.getByRole('button', { name: 'Abrir detalhes de PlayStation 3' }).click();
+  await page.getByRole('tab', { name: 'Emulador & Verificações' }).click();
   await expect(page.getByText('Matriz de Capacidades por Funcionalidade')).toBeVisible();
   await expect(page.getByText('Boot Completo').first()).toBeVisible();
   await expect(page.getByText('Dashboard Original').first()).toBeVisible();
@@ -298,14 +318,14 @@ test('navigates all Phase 1 sections, displays honest multi-capability badges, a
   await page.getByRole('button', { name: 'Emuladores & Firmware' }).click();
   await page.getByLabel('Caminho local do rpcs3.exe').fill('C:\\Emulators\\RPCS3\\rpcs3.exe');
   await page.getByRole('button', { name: 'Validar e Salvar RPCS3' }).click();
-  await expect(page.getByText('Não confirmado (Fase 4)')).toBeVisible();
+  await expect(page.getByText('Não confirmado (Fase 3)')).toBeVisible();
 
   await page
     .getByLabel('Validar pacote PS3UPDAT.PUP fornecido pelo usuário (SHA-256 local)')
     .fill('C:\\Firmware\\PS3UPDAT.PUP');
   await page.getByRole('button', { name: 'Validar Firmware Local' }).click();
   await expect(page.getByText('PS3UPDAT.PUP validado')).toBeVisible();
-  await expect(page.getByText('Não confirmado (Fase 4)')).toBeVisible();
+  await expect(page.getByText('Não confirmado (Fase 3)')).toBeVisible();
 
   // Library registration & favorite toggle
   await page.getByRole('button', { name: 'Biblioteca' }).click();
@@ -322,10 +342,10 @@ test('navigates all Phase 1 sections, displays honest multi-capability badges, a
   await page.getByRole('button', { name: 'Salvar Perfil' }).click();
   await expect(page.getByText('Perfil salvo com sucesso no banco local SQLite.')).toBeVisible();
 
-  // Trophies honest provider origins
+  // Trophies honest provider origins (friendly formatted labels)
   await page.getByRole('button', { name: 'Central de Troféus' }).click();
   await expect(page.getByText('LocalAchievementProvider')).toBeVisible();
-  await expect(page.getByText('unavailable_no_official_api')).toBeVisible();
+  await expect(page.getByText('Indisponível (sem API oficial)')).toBeVisible();
 
   // Settings & SQLite backup trigger
   await page.getByRole('button', { name: 'Configurações' }).click();

@@ -15,8 +15,8 @@
 - Preparação real do **RPCS3** em 4 estágios independentes (`xmb_runtime_confirmed = false`).
 - Auditoria prática concluída no executável standalone Windows (`0` erros console/página, persistência e backup confirmados após reinício).
 
-### Phase 2 — Universal Player, Console Environments & Sessions Foundation (PLANEJADA — PRONTA PARA INÍCIO)
-Entrega a camada completa de ambientes independentes por console (`ConsoleEnvironment`), descoberta e importação assíncrona de jogos (com parser binário `PARAM.SFO`), cache seguro de capas (`CoverCache`), página individual de jogo com gerenciamento de versões (`game_versions`), fundação real de sessões (`SessionOrchestrator` com recuperação idempotente por `last_heartbeat_at`), motor de estatísticas/histórico e fechamento das 4 pendências da auditoria pós-Fase 1 (restauração segura de backup SQLite pela interface, seletor nativo `tauri-plugin-dialog`, sidebar `sticky` e rótulos amigáveis). **Sem execução ao vivo de emuladores ainda.**
+### Phase 2 — Universal Player, Console Environments & Sessions Foundation (CONCLUÍDA & AUDITADA — OPÇÃO A)
+Entregou a camada completa de ambientes independentes por console (`ConsoleEnvironmentPage`), descoberta e importação assíncrona de jogos (com parser binário `PARAM.SFO` checado por limites e `Channel<ScanProgressEvent>`), cache seguro de capas (`CoverCache` + `protocol-asset` + `http://asset.localhost`), página individual de jogo com gerenciamento de versões (`game_versions`), fundação real de sessões (`SessionService` com recuperação idempotente por `last_heartbeat_at`), motor de estatísticas/histórico, Migration `0002` (`19 → 22` tabelas `STRICT` + índices aditivos) e fechamento completo das 4 pendências da auditoria pós-Fase 1 (restauração ao vivo de backup SQLite pela UI com snapshot pré-restauração e rollback automático, seletor nativo `tauri-plugin-dialog`, sidebar `sticky` e rótulos amigáveis PT-BR). **Sem execução ao vivo de emuladores ainda (reservada à Fase 3).**
 
 ### Phase 3 — First 100% Playable Console: PlayStation 3 via RPCS3 (OPÇÃO A)
 - **Prioridade total no PS3 antes de qualquer outro console.**

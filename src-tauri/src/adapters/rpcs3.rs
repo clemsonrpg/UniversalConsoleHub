@@ -69,7 +69,7 @@ impl EmulatorAdapter for Rpcs3Adapter {
                     states: vec![CapabilityState::OriginalDashboard],
                     availability: FeatureAvailability::RequiresUserFiles,
                     verification: VerificationLevel::DocumentedUpstream,
-                    notes: "PS3 XMB original via vsh.self; confirmação de execução real reservada à Fase 4.".to_string(),
+                    notes: "PS3 XMB original via vsh.self; confirmação de execução real reservada à Fase 3.".to_string(),
                 },
                 FeatureCapability {
                     feature: FeatureKey::DirectGameBoot,
@@ -83,7 +83,7 @@ impl EmulatorAdapter for Rpcs3Adapter {
                     states: vec![CapabilityState::DirectGameOnly],
                     availability: FeatureAvailability::Planned,
                     verification: VerificationLevel::DocumentedUpstream,
-                    notes: "Leitura somente leitura de dev_hdd0/home/<user>/trophy/ planejada para a Fase 3.".to_string(),
+                    notes: "Leitura somente leitura de dev_hdd0/home/<user>/trophy/ planejada para a Fase 4.".to_string(),
                 },
                 FeatureCapability {
                     feature: FeatureKey::OnlineServices,
@@ -257,7 +257,7 @@ impl EmulatorAdapter for Rpcs3Adapter {
 
         if trophy_dir.is_dir() {
             found_paths.push(trophy_dir);
-            notes.push("Diretório local de troféus detectado (leitura somente leitura planejada para Fase 3).".to_string());
+            notes.push("Diretório local de troféus detectado (leitura somente leitura planejada para Fase 4).".to_string());
         }
 
         let system_files_present = missing_paths.is_empty();
@@ -320,9 +320,9 @@ impl EmulatorAdapter for Rpcs3Adapter {
             }
         };
 
-        // Mandatory Adjustment #2 & #5: Phase 1 NEVER claims XMB runtime boot confirmed.
+        // Mandatory Adjustment #2 & Option A: NEVER claim XMB runtime boot confirmed before Phase 3 real validation.
         notes.push(
-            "Estágio 4/4: Execução real do XMB NÃO confirmada na Fase 1 (lançamento ao vivo, monitoramento e retorno ao Hub pertencem à Fase 4)."
+            "Estágio 4/4: Execução real do XMB NÃO confirmada nas Fases 1–2 (lançamento ao vivo, monitoramento e retorno ao Hub pertencem à Fase 3)."
                 .to_string(),
         );
 
