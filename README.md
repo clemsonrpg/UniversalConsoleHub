@@ -33,4 +33,5 @@ Universal Console Hub é um aplicativo desktop local-first (Tauri 2 + Rust + SQL
 
 ## Status Atual
 
-- **Fase 1 (Project Foundation):** Em construção — fundação Tauri 2/Rust/React/SQLite, schema de 19 tabelas, contrato de adaptadores, preparação do RPCS3, Design System e telas iniciais funcionais.
+- **Fase 1 (Project Foundation):** Concluída e auditada no executável standalone Windows (`10` commits preservados em `main`: `d7b059a..00488f8`) — fundação Tauri 2/Rust/React/SQLite (`19` tabelas `STRICT`), contrato de adaptadores, preparação RPCS3 em 4 estágios, Design System "Obsidian Hardware" e telas base.
+- **Fase 2 (Universal Player, Console Environments & Sessions Foundation — Opção A):** Planejamento arquitetural e schema (`Migration 0002`, `19 → 22` tabelas `STRICT` + índices aditivos) consolidados e prontos para execução sequencial em 10 Tasks sob TDD.
