@@ -5,6 +5,7 @@ pub mod infrastructure;
 pub mod ipc;
 
 use tauri::Manager;
+use tracing::{info, warn};
 
 use crate::adapters::registry::AdapterRegistry;
 use crate::application::services::AppServices;
@@ -24,16 +25,36 @@ pub fn run() {
                 .map_err(|e| std::io::Error::other(format!("app_local_data_dir failed: {e}")))?;
             let db_path = app_data_dir.join("universal_console_hub.db");
             let backup_dir = app_data_dir.join("backups");
+            let cover_cache_dir = app_data_dir.join("cache").join("covers");
 
             let db = DatabaseManager::open(&db_path)
                 .map_err(|e| std::io::Error::other(format!("sqlite init failed: {e}")))?;
-            let services =
-                AppServices::new(db, AdapterRegistry::with_phase_one_adapters(), backup_dir);
+            let services = AppServices::with_dirs(
+                db,
+                AdapterRegistry::with_phase_one_adapters(),
+                backup_dir,
+                cover_cache_dir,
+            );
+
+            match services.session_service().reconcile_orphaned_sessions() {
+                Ok(report) if report.recovered_count > 0 => {
+                    info!(
+                        recovered = report.recovered_count,
+                        seconds = report.total_recovered_seconds,
+                        "reconciled orphaned game sessions on startup using last_heartbeat_at"
+                    );
+                }
+                Ok(_) => {}
+                Err(err) => {
+                    warn!(error = %err, "failed to reconcile orphaned sessions on startup");
+                }
+            }
 
             app.manage(services);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            // Phase 1 commands (18 — all preserved)
             ipc::commands::ping_hub,
             ipc::commands::get_hub_bootstrap,
             ipc::commands::list_consoles,
@@ -52,6 +73,20 @@ pub fn run() {
             ipc::commands::get_app_settings,
             ipc::commands::update_app_setting,
             ipc::commands::create_database_backup,
+            // Phase 2 commands (13 — total 31)
+            ipc::commands::get_console_environment,
+            ipc::commands::add_console_scan_path,
+            ipc::commands::remove_console_scan_path,
+            ipc::commands::scan_console_library,
+            ipc::commands::update_console_setting,
+            ipc::commands::get_game_details,
+            ipc::commands::update_game_metadata,
+            ipc::commands::set_game_cover,
+            ipc::commands::get_statistics_overview,
+            ipc::commands::list_activity_history,
+            ipc::commands::list_database_backups,
+            ipc::commands::inspect_database_backup,
+            ipc::commands::restore_database_backup,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Universal Console Hub");

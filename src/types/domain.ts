@@ -252,3 +252,204 @@ export interface RegisterGameRequest {
   filePath: string;
   metadataSource: string;
 }
+
+// ===== Phase 2 Domain Contracts =====
+
+export type ConsoleEnvironmentMode =
+  | 'authentic_system_capable'
+  | 'integrated_alternative_only';
+
+export type RuntimeVerificationFeature =
+  | 'emulator_launch'
+  | 'system_boot'
+  | 'original_dashboard'
+  | 'game_boot'
+  | 'per_game_compatibility'
+  | 'session_monitoring'
+  | 'hub_return';
+
+export type RuntimeVerificationStatus =
+  | 'unverified'
+  | 'documented_upstream'
+  | 'files_verified'
+  | 'runtime_confirmed'
+  | 'failed';
+
+export interface RuntimeVerificationRecord {
+  id: string;
+  consoleId: string;
+  consoleSlug: string;
+  emulatorId: string;
+  emulatorSlug: string;
+  gameId: string | null;
+  scopeKey: string;
+  featureKey: RuntimeVerificationFeature;
+  emulatorVersion: string;
+  status: RuntimeVerificationStatus;
+  evidenceNotes: string;
+  verifiedAt: string;
+}
+
+export interface ConsoleScanPath {
+  id: string;
+  consoleId: string;
+  consoleSlug: string;
+  directoryPath: string;
+  recursive: boolean;
+  enabled: boolean;
+  lastScannedAt: string | null;
+  createdAt: string;
+}
+
+export interface ConsoleSetting {
+  id: string;
+  consoleId: string;
+  consoleSlug: string;
+  key: string;
+  value: string;
+  updatedAt: string;
+}
+
+export interface ConsoleEnvironmentDto {
+  console: ConsoleRecord;
+  emulator: EmulatorRecord | null;
+  environmentMode: ConsoleEnvironmentMode;
+  games: GameRecord[];
+  scanPaths: ConsoleScanPath[];
+  settings: ConsoleSetting[];
+  firmwareRecords: FirmwareRecordDto[];
+  runtimeVerifications: RuntimeVerificationRecord[];
+  rpcs3Inspection: Rpcs3InspectionDto | null;
+}
+
+export type ScanProgressEvent =
+  | { event: 'started'; data: { consoleSlug: string; totalDirectories: number } }
+  | { event: 'scanningDirectory'; data: { directoryPath: string; filesChecked: number } }
+  | {
+      event: 'gameDiscovered';
+      data: { title: string; serialCode: string | null; filePath: string };
+    }
+  | {
+      event: 'completed';
+      data: {
+        scannedFiles: number;
+        gamesAdded: number;
+        versionsAdded: number;
+        skippedExisting: number;
+      };
+    }
+  | { event: 'error'; data: { message: string } };
+
+export interface ScanSummaryDto {
+  consoleSlug: string;
+  scannedDirectories: number;
+  scannedFiles: number;
+  gamesAdded: number;
+  versionsAdded: number;
+  skippedExisting: number;
+  errors: string[];
+}
+
+export interface GameVersionRecord {
+  id: string;
+  gameId: string;
+  versionLabel: string;
+  region: string;
+  serialCode: string | null;
+  filePath: string;
+  installState: string;
+  createdAt: string;
+}
+
+export interface GameSessionRecord {
+  id: string;
+  profileId: string;
+  gameId: string;
+  gameTitle: string;
+  consoleSlug: string;
+  gameVersionId: string | null;
+  emulatorId: string;
+  startedAt: string;
+  lastHeartbeatAt: string;
+  endedAt: string | null;
+  durationSeconds: number;
+  exitStatus: string;
+}
+
+export interface GameDetailsDto {
+  game: GameRecord;
+  versions: GameVersionRecord[];
+  sessions: GameSessionRecord[];
+}
+
+export interface UpdateGameMetadataRequest {
+  gameId: string;
+  description: string;
+  developer: string | null;
+  publisher: string | null;
+  releaseYear: number | null;
+  genre: string | null;
+  completionPercent: number;
+}
+
+export interface ConsolePlaytimeStat {
+  consoleSlug: string;
+  consoleName: string;
+  gamesCount: number;
+  sessionsCount: number;
+  totalPlaytimeSeconds: number;
+}
+
+export interface TopGameStat {
+  gameId: string;
+  title: string;
+  consoleSlug: string;
+  sessionsCount: number;
+  totalPlaytimeSeconds: number;
+  completionPercent: number;
+  lastPlayedAt: string | null;
+}
+
+export interface MonthlyPlaytimeStat {
+  month: string;
+  sessionsCount: number;
+  totalPlaytimeSeconds: number;
+}
+
+export interface StatisticsOverview {
+  totalPlaytimeSeconds: number;
+  totalSessions: number;
+  gamesRegistered: number;
+  gamesStarted: number;
+  gamesCompleted: number;
+  completionRatePercent: number;
+  byConsole: ConsolePlaytimeStat[];
+  topGames: TopGameStat[];
+  monthlyPlaytime: MonthlyPlaytimeStat[];
+}
+
+export interface BackupFileEntry {
+  fileName: string;
+  backupPath: string;
+  sizeBytes: number;
+  modifiedAt: string;
+}
+
+export interface BackupInspectionReport {
+  backupPath: string;
+  sizeBytes: number;
+  integrityOk: boolean;
+  schemaVersion: number;
+  profilesCount: number;
+  gamesCount: number;
+  inspectedAt: string;
+}
+
+export interface LiveRestoreReport {
+  sourceBackupPath: string;
+  restoredDbPath: string;
+  preRestoreSnapshotPath: string;
+  integrityOk: boolean;
+  schemaVersion: number;
+  restoredAt: string;
+}

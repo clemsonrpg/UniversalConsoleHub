@@ -1,18 +1,26 @@
 use std::collections::BTreeMap;
+use std::path::Path;
 
 use serde::Serialize;
+use tauri::ipc::Channel;
 use tauri::State;
 
+use crate::application::backup_service::BackupFileEntry;
+use crate::application::environment_service::ConsoleEnvironmentDto;
 use crate::application::services::{
-    AppServices, ConsoleDetailsDto, HubBootstrapDto, RegisterGameRequest, Rpcs3InspectionDto,
-    UpdateProfileRequest,
+    ActivityEntryDto, AppServices, ConsoleDetailsDto, HubBootstrapDto, RegisterGameRequest,
+    Rpcs3InspectionDto, UpdateProfileRequest,
 };
 use crate::domain::console::ConsoleRecord;
 use crate::domain::emulator::EmulatorRecord;
+use crate::domain::environment::{ConsoleScanPath, ConsoleSetting};
 use crate::domain::error::DomainError;
 use crate::domain::player::{GameRecord, PlayerProfile};
+use crate::domain::scanner::{ScanProgressEvent, ScanSummaryDto};
+use crate::domain::session::StatisticsOverview;
 use crate::domain::trophy::{AchievementProviderRecord, TrophyRecord};
-use crate::infrastructure::db::manager::BackupReport;
+use crate::infrastructure::db::console_env_repo::{GameDetailsDto, UpdateGameMetadataInput};
+use crate::infrastructure::db::manager::{BackupInspectionReport, BackupReport, LiveRestoreReport};
 use crate::infrastructure::db::repositories::FirmwareRecordDto;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -96,8 +104,7 @@ pub fn update_active_profile(
 
 #[tauri::command]
 pub fn list_games(services: State<'_, AppServices>) -> Result<Vec<GameRecord>, DomainError> {
-    let profile = services.repos.get_active_profile()?;
-    services.repos.list_games(&profile.id)
+    services.list_games_sanitized()
 }
 
 #[tauri::command]
@@ -152,4 +159,134 @@ pub fn create_database_backup(
     services: State<'_, AppServices>,
 ) -> Result<BackupReport, DomainError> {
     services.create_database_backup(file_name)
+}
+
+// ===== Phase 2 Commands (13 new commands, total = 31) =====
+
+#[tauri::command]
+pub fn get_console_environment(
+    slug: String,
+    services: State<'_, AppServices>,
+) -> Result<ConsoleEnvironmentDto, DomainError> {
+    services.get_console_environment(&slug)
+}
+
+#[tauri::command]
+pub fn add_console_scan_path(
+    console_slug: String,
+    directory_path: String,
+    recursive: bool,
+    services: State<'_, AppServices>,
+) -> Result<ConsoleScanPath, DomainError> {
+    services
+        .environment_service()
+        .add_scan_path(&console_slug, &directory_path, recursive)
+}
+
+#[tauri::command]
+pub fn remove_console_scan_path(
+    path_id: String,
+    services: State<'_, AppServices>,
+) -> Result<bool, DomainError> {
+    services.environment_service().remove_scan_path(&path_id)
+}
+
+#[tauri::command]
+pub async fn scan_console_library(
+    console_slug: String,
+    on_progress: Channel<ScanProgressEvent>,
+    services: State<'_, AppServices>,
+) -> Result<ScanSummaryDto, DomainError> {
+    let scanner = services.scanner_service().clone();
+    tokio::task::spawn_blocking(move || {
+        scanner.scan_console(&console_slug, |evt| {
+            let _ = on_progress.send(evt);
+        })
+    })
+    .await
+    .map_err(|e| DomainError::Io(format!("scanner task failed to join: {e}")))?
+}
+
+#[tauri::command]
+pub fn update_console_setting(
+    console_slug: String,
+    key: String,
+    value: String,
+    services: State<'_, AppServices>,
+) -> Result<ConsoleSetting, DomainError> {
+    services
+        .environment_service()
+        .update_console_setting(&console_slug, &key, &value)
+}
+
+#[tauri::command]
+pub fn get_game_details(
+    game_id: String,
+    services: State<'_, AppServices>,
+) -> Result<GameDetailsDto, DomainError> {
+    services.environment_service().get_game_details(&game_id)
+}
+
+#[tauri::command]
+pub fn update_game_metadata(
+    request: UpdateGameMetadataInput,
+    services: State<'_, AppServices>,
+) -> Result<GameRecord, DomainError> {
+    services.environment_service().update_game_metadata(request)
+}
+
+#[tauri::command]
+pub fn set_game_cover(
+    game_id: String,
+    source_image_path: String,
+    services: State<'_, AppServices>,
+) -> Result<GameRecord, DomainError> {
+    services
+        .environment_service()
+        .set_game_cover(&game_id, &source_image_path)
+}
+
+#[tauri::command]
+pub fn get_statistics_overview(
+    services: State<'_, AppServices>,
+) -> Result<StatisticsOverview, DomainError> {
+    services.statistics_service().get_statistics_overview()
+}
+
+#[tauri::command]
+pub fn list_activity_history(
+    event_type_filter: Option<String>,
+    limit: Option<i64>,
+    services: State<'_, AppServices>,
+) -> Result<Vec<ActivityEntryDto>, DomainError> {
+    services
+        .statistics_service()
+        .list_activity_history(event_type_filter.as_deref(), limit.unwrap_or(100))
+}
+
+#[tauri::command]
+pub fn list_database_backups(
+    services: State<'_, AppServices>,
+) -> Result<Vec<BackupFileEntry>, DomainError> {
+    services.backup_service().list_backups()
+}
+
+#[tauri::command]
+pub fn inspect_database_backup(
+    backup_path: String,
+    services: State<'_, AppServices>,
+) -> Result<BackupInspectionReport, DomainError> {
+    services
+        .backup_service()
+        .inspect_backup(Path::new(&backup_path))
+}
+
+#[tauri::command]
+pub fn restore_database_backup(
+    backup_path: String,
+    services: State<'_, AppServices>,
+) -> Result<LiveRestoreReport, DomainError> {
+    services
+        .backup_service()
+        .restore_backup(Path::new(&backup_path))
 }
