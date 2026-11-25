@@ -1,4 +1,5 @@
 import type { AchievementProviderRecord, TrophyRecord } from '../types/domain';
+import { formatAvailabilityStatus, formatTrophyOrigin } from '../utils/formatters';
 import styles from './Pages.module.css';
 
 export interface TrophiesPageProps {
@@ -37,8 +38,8 @@ export function TrophiesPage({ providers, trophies }: TrophiesPageProps) {
                   <td>
                     <strong>{provider.name}</strong>
                   </td>
-                  <td className={styles.mono}>{provider.origin}</td>
-                  <td className={styles.mono}>{provider.availabilityStatus}</td>
+                  <td>{formatTrophyOrigin(provider.origin)}</td>
+                  <td>{formatAvailabilityStatus(provider.availabilityStatus)}</td>
                   <td>{provider.notes}</td>
                 </tr>
               ))}
@@ -52,7 +53,7 @@ export function TrophiesPage({ providers, trophies }: TrophiesPageProps) {
         {trophies.length === 0 ? (
           <p className={styles.muted}>
             Nenhum troféu registrado ainda. O leitor local somente leitura do RPCS3 (TROPCONF.SFM e
-            TROPUSR.DAT) e o fluxo de notificações entram na Fase 3.
+            TROPUSR.DAT) acoplado às sessões reais do PS3 entra na Fase 4.
           </p>
         ) : (
           <ul className={styles.list}>

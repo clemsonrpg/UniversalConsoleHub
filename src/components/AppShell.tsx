@@ -43,7 +43,7 @@ export function AppShell({
       <aside className={styles.rail} aria-label="Navegação principal do Hub">
         <div className={styles.brand}>
           <span className={styles.brandTitle}>Universal Console Hub</span>
-          <span className={styles.brandSub}>Fase 1 · Fundação Desktop</span>
+          <span className={styles.brandSub}>Fase 2 · Ambientes &amp; Biblioteca</span>
         </div>
 
         <nav aria-label="Seções">

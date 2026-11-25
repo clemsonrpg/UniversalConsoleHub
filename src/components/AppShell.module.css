@@ -6,6 +6,10 @@
 }
 
 .rail {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
   background: var(--bg-rail);
   border-right: 1px solid var(--border-subtle);
   padding: var(--space-5) var(--space-3);
@@ -101,6 +105,9 @@
     grid-template-columns: 1fr;
   }
   .rail {
+    position: static;
+    height: auto;
+    overflow-y: visible;
     border-right: none;
     border-bottom: 1px solid var(--border-subtle);
   }

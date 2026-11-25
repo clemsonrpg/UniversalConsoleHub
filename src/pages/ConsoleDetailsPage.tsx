@@ -1,6 +1,12 @@
 import { CapabilityBadge } from '../components/CapabilityBadge';
 import { ReadinessTracker } from '../components/ReadinessTracker';
-import type { ConsoleDetailsDto, FeatureKey } from '../types/domain';
+import type { ConsoleDetailsDto } from '../types/domain';
+import {
+  formatAvailabilityStatus,
+  formatFeatureKey,
+  formatFirmwareValidationStatus,
+  formatVerificationLevel,
+} from '../utils/formatters';
 import styles from './Pages.module.css';
 
 export interface ConsoleDetailsPageProps {
@@ -8,15 +14,6 @@ export interface ConsoleDetailsPageProps {
   onBack: () => void;
   onOpenEmulators: () => void;
 }
-
-const FEATURE_LABELS: Record<FeatureKey, string> = {
-  system_boot: 'Boot Completo do Sistema',
-  original_dashboard: 'Dashboard / Menu Original',
-  direct_game_boot: 'Execução Direta de Jogos',
-  save_management: 'Gerenciamento de Saves',
-  local_trophies: 'Troféus / Conquistas Locais',
-  online_services: 'Serviços Online Oficiais',
-};
 
 export function ConsoleDetailsPage({
   details,
@@ -72,7 +69,7 @@ export function ConsoleDetailsPage({
             <tbody>
               {consoleRecord.capabilities.features.map((feat) => (
                 <tr key={feat.feature}>
-                  <td>{FEATURE_LABELS[feat.feature]}</td>
+                  <td>{formatFeatureKey(feat.feature)}</td>
                   <td>
                     <div className={styles.badgeRow}>
                       {feat.states.map((s) => (
@@ -80,8 +77,8 @@ export function ConsoleDetailsPage({
                       ))}
                     </div>
                   </td>
-                  <td className={styles.mono}>{feat.availability}</td>
-                  <td className={styles.mono}>{feat.verification}</td>
+                  <td>{formatAvailabilityStatus(feat.availability)}</td>
+                  <td>{formatVerificationLevel(feat.verification)}</td>
                   <td>{feat.notes}</td>
                 </tr>
               ))}
@@ -92,14 +89,14 @@ export function ConsoleDetailsPage({
 
       {rpcs3Inspection ? (
         <section className={styles.section}>
-          <h2 className={styles.sectionTitle}>Preparação RPCS3 (Escopo da Fase 1)</h2>
+          <h2 className={styles.sectionTitle}>Preparação RPCS3 (Pronto para Execução na Fase 3)</h2>
           <p className={styles.muted}>{rpcs3Inspection.diagnostic}</p>
           {rpcs3Inspection.readiness ? (
             <ReadinessTracker readiness={rpcs3Inspection.readiness} />
           ) : null}
           <div className={`${styles.banner} ${styles.bannerInfo}`}>
-            Execução ao vivo do RPCS3, monitoramento de sessão e retorno ao Hub pertencem à Fase 4.
-            Na Fase 1, nenhum botão simulado de lançamento do XMB é exibido.
+            Execução ao vivo do RPCS3, boot real do XMB, monitoramento de sessão e retorno ao Hub
+            entram na Fase 3. Na Fase 2, nenhum botão simulado de lançamento é exibido.
           </div>
         </section>
       ) : null}
@@ -118,7 +115,8 @@ export function ConsoleDetailsPage({
                 <div>
                   <div className={styles.mono}>{fw.filePath}</div>
                   <div className={styles.muted}>
-                    Status: {fw.validationStatus} · SHA-256: {fw.sha256.slice(0, 16)}…
+                    Status: {formatFirmwareValidationStatus(fw.validationStatus)} · SHA-256:{' '}
+                    {fw.sha256.slice(0, 16)}…
                   </div>
                 </div>
                 <span className={styles.mono}>{fw.validatedAt}</span>

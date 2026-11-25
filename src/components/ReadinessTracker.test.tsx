@@ -26,6 +26,6 @@ describe('ReadinessTracker (4-stage RPCS3 truthfulness)', () => {
     expect(screen.getByText(/Arquivos de Sistema/i)).toBeInTheDocument();
     expect(screen.getByText(/Comando Seguro Gerado/i)).toBeInTheDocument();
     expect(screen.getByText(/Confirmação Runtime do XMB/i)).toBeInTheDocument();
-    expect(screen.getByText(/Não confirmado \(Fase 4\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/Não confirmado \(Fase 3\)/i)).toBeInTheDocument();
   });
 });

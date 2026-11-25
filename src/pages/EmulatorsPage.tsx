@@ -6,6 +6,10 @@ import type {
   FirmwareRecordDto,
   Rpcs3InspectionDto,
 } from '../types/domain';
+import {
+  formatFirmwareValidationStatus,
+  formatIntegrationStage,
+} from '../utils/formatters';
 import styles from './Pages.module.css';
 
 export interface EmulatorsPageProps {
@@ -96,7 +100,7 @@ export function EmulatorsPage({
       </header>
 
       <section className={styles.section}>
-        <h2 className={styles.sectionTitle}>Preparação RPCS3 (PlayStation 3 — Fase 1)</h2>
+        <h2 className={styles.sectionTitle}>Preparação RPCS3 (PlayStation 3 · Execução Ao Vivo na Fase 3)</h2>
         <p className={styles.muted}>{rpcs3Inspection.diagnostic}</p>
 
         <form onSubmit={handleSaveRpcs3} className={styles.formGrid}>
@@ -186,7 +190,7 @@ export function EmulatorsPage({
                     <strong>{emu.name}</strong>
                   </td>
                   <td className={styles.mono}>{emu.consoleSlug.toUpperCase()}</td>
-                  <td className={styles.mono}>{emu.integrationPhase}</td>
+                  <td>{formatIntegrationStage(emu.integrationPhase)}</td>
                   <td>
                     <div className={styles.badgeRow}>
                       {emu.capabilities.supportedStates.map((s) => (
@@ -213,8 +217,8 @@ export function EmulatorsPage({
                 <div>
                   <div className={styles.mono}>{fw.filePath}</div>
                   <div className={styles.muted}>
-                    {fw.consoleSlug.toUpperCase()} · {fw.validationStatus} · SHA-256:{' '}
-                    {fw.sha256}
+                    {fw.consoleSlug.toUpperCase()} ·{' '}
+                    {formatFirmwareValidationStatus(fw.validationStatus)} · SHA-256: {fw.sha256}
                   </div>
                 </div>
                 <span className={styles.mono}>{fw.validatedAt}</span>

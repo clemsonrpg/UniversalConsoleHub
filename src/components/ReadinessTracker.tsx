@@ -82,7 +82,7 @@ export function ReadinessTracker({ readiness }: ReadinessTrackerProps) {
           >
             {readiness.xmbRuntimeConfirmed
               ? 'Confirmado em execução'
-              : 'Não confirmado (Fase 4)'}
+              : 'Não confirmado (Fase 3)'}
           </div>
         </li>
       </ol>
