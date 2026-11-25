@@ -23,9 +23,14 @@ fn computes_streaming_sha256_on_unicode_windows_path_and_rejects_directories() {
     assert_eq!(digest.len(), 64);
     assert!(digest.chars().all(|c| c.is_ascii_hexdigit()));
 
-    // Directory must be rejected by validate_existing_file
+    // Directory must be rejected by validate_existing_file; valid path must not leak Windows \\?\ prefix
     assert!(SecurityManager::validate_existing_file(&unicode_dir).is_err());
-    assert!(SecurityManager::validate_existing_file(&sample_file).is_ok());
+    let validated = SecurityManager::validate_existing_file(&sample_file).expect("valid file");
+    assert!(
+        !validated.to_string_lossy().starts_with(r"\\?\"),
+        "normalized Windows path should not expose raw verbatim prefix: {}",
+        validated.display()
+    );
 }
 
 #[test]

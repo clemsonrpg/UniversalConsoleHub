@@ -10,6 +10,10 @@ rust-version = "1.82"
 name = "universal_console_hub_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+# Enables embedded `frontendDist` assets for standalone desktop binaries (used automatically by `tauri build`).
+custom-protocol = ["tauri/custom-protocol"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 

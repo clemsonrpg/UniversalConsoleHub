@@ -13,7 +13,7 @@ export function TrophiesPage({ providers, trophies }: TrophiesPageProps) {
         <div>
           <h1 className={styles.title}>Central de Troféus</h1>
           <p className={styles.subtitle}>
-            Separação rigorosa e imutável entre origens `official`, `emulator` e `local` protegida
+            Separação rigorosa e imutável entre origens oficiais, de emuladores e locais, protegida
             no domínio Rust e por triggers SQLite. Nenhuma conquista oficial é falsificada.
           </p>
         </div>
@@ -51,8 +51,8 @@ export function TrophiesPage({ providers, trophies }: TrophiesPageProps) {
         <h2 className={styles.sectionTitle}>Coleção de Troféus ({trophies.length})</h2>
         {trophies.length === 0 ? (
           <p className={styles.muted}>
-            Nenhum troféu registrado ainda. O leitor local somente leitura do RPCS3 (`TROPCONF.SFM`
-            + `TROPUSR.DAT`) e o fluxo de notificações entram na Fase 3.
+            Nenhum troféu registrado ainda. O leitor local somente leitura do RPCS3 (TROPCONF.SFM e
+            TROPUSR.DAT) e o fluxo de notificações entram na Fase 3.
           </p>
         ) : (
           <ul className={styles.list}>

@@ -50,8 +50,8 @@ export function SettingsPage({
         <div>
           <h1 className={styles.title}>Configurações do Sistema</h1>
           <p className={styles.subtitle}>
-            Preferências persistidas na tabela `application_settings` e gerenciamento seguro de
-            backups SQLite em modo WAL.
+            Preferências persistidas localmente no SQLite e gerenciamento seguro de backups em modo
+            WAL.
           </p>
         </div>
       </header>
@@ -113,8 +113,8 @@ export function SettingsPage({
       <section className={styles.section}>
         <h2 className={styles.sectionTitle}>Integridade e Backup do Banco SQLite</h2>
         <p className={styles.muted}>
-          Gera um snapshot consistente via `VACUUM INTO` (seguro com banco WAL aberto) e valida com
-          `PRAGMA quick_check` e `PRAGMA foreign_key_check`.
+          Gera um snapshot consistente via <code>VACUUM INTO</code> (seguro com banco WAL aberto) e
+          valida com <code>PRAGMA quick_check</code> e <code>PRAGMA foreign_key_check</code>.
         </p>
         <div className={styles.actionsRow}>
           <button

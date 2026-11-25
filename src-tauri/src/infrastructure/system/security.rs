@@ -22,6 +22,25 @@ fn normalize_lexical(path: &Path) -> PathBuf {
     normalized
 }
 
+fn strip_windows_verbatim_prefix(path: PathBuf) -> PathBuf {
+    #[cfg(windows)]
+    {
+        if let Some(s) = path.to_str() {
+            if let Some(unc) = s.strip_prefix(r"\\?\UNC\") {
+                return PathBuf::from(format!(r"\\{unc}"));
+            }
+            if let Some(drive) = s.strip_prefix(r"\\?\") {
+                return PathBuf::from(drive);
+            }
+        }
+        path
+    }
+    #[cfg(not(windows))]
+    {
+        path
+    }
+}
+
 impl SecurityManager {
     pub fn validate_existing_file(path: &Path) -> Result<PathBuf, DomainError> {
         let meta = fs::metadata(path).map_err(|e| {
@@ -33,9 +52,11 @@ impl SecurityManager {
                 path.display()
             )));
         }
-        fs::canonicalize(path).map_err(|e| {
-            DomainError::Io(format!("failed to canonicalize '{}': {e}", path.display()))
-        })
+        fs::canonicalize(path)
+            .map(strip_windows_verbatim_prefix)
+            .map_err(|e| {
+                DomainError::Io(format!("failed to canonicalize '{}': {e}", path.display()))
+            })
     }
 
     pub fn ensure_within_base(base_dir: &Path, candidate: &Path) -> Result<PathBuf, DomainError> {
@@ -129,7 +150,7 @@ impl SecurityManager {
                 base_dir.display()
             )));
         }
-        Ok(resolved)
+        Ok(strip_windows_verbatim_prefix(resolved))
     }
 
     pub fn compute_sha256_streaming(path: &Path) -> Result<(String, u64), DomainError> {

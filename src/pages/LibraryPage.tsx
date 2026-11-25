@@ -72,8 +72,8 @@ export function LibraryPage({
         <div>
           <h1 className={styles.title}>Biblioteca Universal</h1>
           <p className={styles.subtitle}>
-            Identidade canônica de jogos separada de versões/regiões (`games` + `game_versions`) com
-            origem identificável de metadados.
+            Identidade canônica de jogos separada de versões e regiões, com origem identificável de
+            metadados.
           </p>
         </div>
       </header>
