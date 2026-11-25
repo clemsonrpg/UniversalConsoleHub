@@ -9,17 +9,24 @@ import { useHubNavigation, type HubSectionId } from './hooks/useHubNavigation';
 import { ConsoleEnvironmentPage } from './pages/ConsoleEnvironmentPage';
 import { ConsolesPage } from './pages/ConsolesPage';
 import { EmulatorsPage } from './pages/EmulatorsPage';
+import { GameDetailsPage } from './pages/GameDetailsPage';
 import { HomePage } from './pages/HomePage';
 import { LibraryPage } from './pages/LibraryPage';
 import pageStyles from './pages/Pages.module.css';
 import { ProfilePage } from './pages/ProfilePage';
 import { SettingsPage } from './pages/SettingsPage';
+import { StatisticsPage } from './pages/StatisticsPage';
 import { TrophiesPage } from './pages/TrophiesPage';
 import type {
+  ActivityEntryDto,
+  BackupFileEntry,
   ConsoleEnvironmentDto,
+  GameDetailsDto,
   HubBootstrapDto,
   RegisterGameRequest,
   ScanProgressEvent,
+  StatisticsOverview,
+  UpdateGameMetadataRequest,
   UpdateProfileRequest,
 } from './types/domain';
 
@@ -39,16 +46,12 @@ export function App() {
   const [section, setSection] = useState<HubSectionId>('home');
   const [selectedConsoleSlug, setSelectedConsoleSlug] = useState<string | null>(null);
   const [consoleEnv, setConsoleEnv] = useState<ConsoleEnvironmentDto | null>(null);
+  const [selectedGameDetails, setSelectedGameDetails] = useState<GameDetailsDto | null>(null);
+  const [statsOverview, setStatsOverview] = useState<StatisticsOverview | null>(null);
+  const [activityItems, setActivityItems] = useState<ActivityEntryDto[]>([]);
+  const [backups, setBackups] = useState<BackupFileEntry[]>([]);
   const [bootstrap, setBootstrap] = useState<HubBootstrapDto | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-
-  const handleSelectSection = useCallback((next: HubSectionId) => {
-    setSection(next);
-    setSelectedConsoleSlug(null);
-    setConsoleEnv(null);
-  }, []);
-
-  useHubNavigation(section, handleSelectSection);
 
   const refreshBootstrap = useCallback(async () => {
     if (!clientResolution.client) return;
@@ -61,6 +64,47 @@ export function App() {
     }
   }, [clientResolution.client]);
 
+  const refreshBackups = useCallback(async () => {
+    if (!clientResolution.client) return;
+    try {
+      const list = await clientResolution.client.listDatabaseBackups();
+      setBackups(list);
+    } catch {
+      setBackups([]);
+    }
+  }, [clientResolution.client]);
+
+  const refreshStatistics = useCallback(async () => {
+    if (!clientResolution.client) return;
+    try {
+      const [overview, activity] = await Promise.all([
+        clientResolution.client.getStatisticsOverview(),
+        clientResolution.client.listActivityHistory(null, 100),
+      ]);
+      setStatsOverview(overview);
+      setActivityItems(activity);
+    } catch (err) {
+      setLoadError(String(err));
+    }
+  }, [clientResolution.client]);
+
+  const handleSelectSection = useCallback(
+    (next: HubSectionId) => {
+      setSection(next);
+      setSelectedConsoleSlug(null);
+      setConsoleEnv(null);
+      setSelectedGameDetails(null);
+      if (next === 'statistics') {
+        void refreshStatistics();
+      } else if (next === 'settings') {
+        void refreshBackups();
+      }
+    },
+    [refreshBackups, refreshStatistics]
+  );
+
+  useHubNavigation(section, handleSelectSection);
+
   useEffect(() => {
     void refreshBootstrap();
   }, [refreshBootstrap]);
@@ -70,6 +114,7 @@ export function App() {
       if (!clientResolution.client) return;
       setSection('consoles');
       setSelectedConsoleSlug(slug);
+      setSelectedGameDetails(null);
       try {
         const env = await clientResolution.client.getConsoleEnvironment(slug);
         setConsoleEnv(env);
@@ -85,6 +130,19 @@ export function App() {
     const env = await clientResolution.client.getConsoleEnvironment(selectedConsoleSlug);
     setConsoleEnv(env);
   }, [clientResolution.client, selectedConsoleSlug]);
+
+  const openGameDetails = useCallback(
+    async (gameId: string) => {
+      if (!clientResolution.client) return;
+      try {
+        const details = await clientResolution.client.getGameDetails(gameId);
+        setSelectedGameDetails(details);
+      } catch (err) {
+        setLoadError(String(err));
+      }
+    },
+    [clientResolution.client]
+  );
 
   if (clientResolution.error instanceof DesktopRuntimeRequiredError) {
     return (
@@ -147,6 +205,26 @@ export function App() {
     await client.toggleGameFavorite(gameId);
     await refreshBootstrap();
     await refreshActiveConsoleEnv();
+    if (selectedGameDetails?.game.id === gameId) {
+      const updated = await client.getGameDetails(gameId);
+      setSelectedGameDetails(updated);
+    }
+  };
+
+  const handleUpdateGameMetadata = async (request: UpdateGameMetadataRequest) => {
+    await client.updateGameMetadata(request);
+    await refreshBootstrap();
+    await refreshActiveConsoleEnv();
+    const updated = await client.getGameDetails(request.gameId);
+    setSelectedGameDetails(updated);
+  };
+
+  const handleSetGameCover = async (gameId: string, sourceImagePath: string) => {
+    await client.setGameCover(gameId, sourceImagePath);
+    await refreshBootstrap();
+    await refreshActiveConsoleEnv();
+    const updated = await client.getGameDetails(gameId);
+    setSelectedGameDetails(updated);
   };
 
   const handleAddScanPath = async (
@@ -207,7 +285,20 @@ export function App() {
   };
 
   const handleCreateBackup = async () => {
-    return client.createDatabaseBackup();
+    const report = await client.createDatabaseBackup();
+    await refreshBackups();
+    return report;
+  };
+
+  const handleInspectBackup = async (backupPath: string) => {
+    return client.inspectDatabaseBackup(backupPath);
+  };
+
+  const handleRestoreBackup = async (backupPath: string) => {
+    const report = await client.restoreDatabaseBackup(backupPath);
+    await refreshBootstrap();
+    await refreshBackups();
+    return report;
   };
 
   return (
@@ -218,7 +309,17 @@ export function App() {
       profileHandle={bootstrap.profile.handle}
       transportKind={client.transportKind}
     >
-      {section === 'home' ? (
+      {selectedGameDetails ? (
+        <GameDetailsPage
+          details={selectedGameDetails}
+          onBack={() => setSelectedGameDetails(null)}
+          onToggleFavorite={handleToggleFavorite}
+          onUpdateMetadata={handleUpdateGameMetadata}
+          onSetCover={handleSetGameCover}
+        />
+      ) : null}
+
+      {!selectedGameDetails && section === 'home' ? (
         <HomePage
           data={bootstrap}
           onNavigate={handleSelectSection}
@@ -226,7 +327,7 @@ export function App() {
         />
       ) : null}
 
-      {section === 'consoles' && !selectedConsoleSlug ? (
+      {!selectedGameDetails && section === 'consoles' && !selectedConsoleSlug ? (
         <ConsolesPage
           consoles={bootstrap.consoles}
           emulators={bootstrap.emulators}
@@ -234,7 +335,7 @@ export function App() {
         />
       ) : null}
 
-      {section === 'consoles' && selectedConsoleSlug && consoleEnv ? (
+      {!selectedGameDetails && section === 'consoles' && selectedConsoleSlug && consoleEnv ? (
         <ConsoleEnvironmentPage
           environment={consoleEnv}
           onBack={() => {
@@ -242,7 +343,7 @@ export function App() {
             setConsoleEnv(null);
           }}
           onOpenEmulators={() => handleSelectSection('emulators')}
-          onOpenGame={() => handleSelectSection('library')}
+          onOpenGame={(gameId) => void openGameDetails(gameId)}
           onToggleFavorite={handleToggleFavorite}
           onAddScanPath={handleAddScanPath}
           onRemoveScanPath={handleRemoveScanPath}
@@ -251,16 +352,17 @@ export function App() {
         />
       ) : null}
 
-      {section === 'library' ? (
+      {!selectedGameDetails && section === 'library' ? (
         <LibraryPage
           consoles={bootstrap.consoles}
           games={bootstrap.games}
           onRegisterGame={handleRegisterGame}
           onToggleFavorite={handleToggleFavorite}
+          onOpenGame={(gameId) => void openGameDetails(gameId)}
         />
       ) : null}
 
-      {section === 'profile' ? (
+      {!selectedGameDetails && section === 'profile' ? (
         <ProfilePage
           profile={bootstrap.profile}
           statistics={bootstrap.statistics}
@@ -268,14 +370,22 @@ export function App() {
         />
       ) : null}
 
-      {section === 'trophies' ? (
+      {!selectedGameDetails && section === 'statistics' && statsOverview ? (
+        <StatisticsPage
+          overview={statsOverview}
+          activity={activityItems}
+          onFilterActivity={(eventType) => client.listActivityHistory(eventType, 100)}
+        />
+      ) : null}
+
+      {!selectedGameDetails && section === 'trophies' ? (
         <TrophiesPage
           providers={bootstrap.achievementProviders}
           trophies={bootstrap.trophies}
         />
       ) : null}
 
-      {section === 'emulators' ? (
+      {!selectedGameDetails && section === 'emulators' ? (
         <EmulatorsPage
           emulators={bootstrap.emulators}
           firmwareRecords={bootstrap.firmwareRecords}
@@ -286,11 +396,14 @@ export function App() {
         />
       ) : null}
 
-      {section === 'settings' ? (
+      {!selectedGameDetails && section === 'settings' ? (
         <SettingsPage
           settings={bootstrap.settings}
+          backups={backups}
           onUpdateSetting={handleUpdateSetting}
           onCreateBackup={handleCreateBackup}
+          onInspectBackup={handleInspectBackup}
+          onRestoreBackup={handleRestoreBackup}
         />
       ) : null}
     </AppShell>

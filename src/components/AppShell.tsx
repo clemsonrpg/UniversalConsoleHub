@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import {
+  BarChart3,
   Cpu,
   Gamepad2,
   Home,
@@ -25,6 +26,7 @@ const NAV_ITEMS: Array<{ id: HubSectionId; label: string; Icon: typeof Home }> =
   { id: 'consoles', label: 'Consoles', Icon: Gamepad2 },
   { id: 'library', label: 'Biblioteca', Icon: Library },
   { id: 'profile', label: 'Perfil Universal', Icon: User },
+  { id: 'statistics', label: 'Estatísticas', Icon: BarChart3 },
   { id: 'trophies', label: 'Central de Troféus', Icon: Trophy },
   { id: 'emulators', label: 'Emuladores & Firmware', Icon: Cpu },
   { id: 'settings', label: 'Configurações', Icon: Settings },

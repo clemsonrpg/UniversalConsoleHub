@@ -1,6 +1,8 @@
 import { useMemo, useState, type FormEvent } from 'react';
 import { Star } from 'lucide-react';
+import { FilePathField } from '../components/FilePathField';
 import type { ConsoleRecord, GameRecord, RegisterGameRequest } from '../types/domain';
+import { formatMetadataSource } from '../utils/formatters';
 import styles from './Pages.module.css';
 
 export interface LibraryPageProps {
@@ -8,6 +10,7 @@ export interface LibraryPageProps {
   games: GameRecord[];
   onRegisterGame: (request: RegisterGameRequest) => Promise<void>;
   onToggleFavorite: (gameId: string) => Promise<void>;
+  onOpenGame?: (gameId: string) => void;
 }
 
 export function LibraryPage({
@@ -15,6 +18,7 @@ export function LibraryPage({
   games,
   onRegisterGame,
   onToggleFavorite,
+  onOpenGame,
 }: LibraryPageProps) {
   const [search, setSearch] = useState('');
   const [consoleFilter, setConsoleFilter] = useState('all');
@@ -155,12 +159,13 @@ export function LibraryPage({
               <label className={styles.label} htmlFor="game-path">
                 Caminho local do jogo
               </label>
-              <input
+              <FilePathField
                 id="game-path"
-                className={styles.input}
+                mode="file"
+                dialogTitle="Selecionar arquivo local do jogo"
                 required
                 value={filePath}
-                onChange={(e) => setFilePath(e.target.value)}
+                onChange={setFilePath}
                 placeholder="D:\PS3\DemonsSouls\PS3_GAME\USRDIR\EBOOT.BIN"
               />
             </div>
@@ -222,8 +227,8 @@ export function LibraryPage({
 
         {filteredGames.length === 0 ? (
           <p className={styles.muted}>
-            Nenhum jogo corresponde aos filtros atuais. O scanner automático de diretórios entrará
-            na Fase 2.
+            Nenhum jogo corresponde aos filtros atuais. Você pode registrar títulos aqui ou usar o
+            scanner automático dentro do ambiente de cada console.
           </p>
         ) : (
           <ul className={styles.list}>
@@ -232,24 +237,35 @@ export function LibraryPage({
                 <div>
                   <strong>{game.title}</strong>
                   <div className={styles.muted}>
-                    Console: {game.consoleSlug.toUpperCase()} · Chave: {game.canonicalKey} ·
-                    Versões: {game.versionCount} · Origem: {game.metadataSource}
+                    Console: {game.consoleSlug.toUpperCase()} · Versões: {game.versionCount} ·
+                    Origem: {formatMetadataSource(game.metadataSource)}
                   </div>
                 </div>
-                <button
-                  type="button"
-                  className={styles.btnSecondary}
-                  aria-pressed={game.isFavorite}
-                  onClick={() => void onToggleFavorite(game.id)}
-                >
-                  <Star
-                    size={14}
-                    aria-hidden="true"
-                    fill={game.isFavorite ? 'currentColor' : 'none'}
-                    style={{ marginRight: 6, verticalAlign: 'middle' }}
-                  />
-                  {game.isFavorite ? 'Favorito' : 'Favoritar'}
-                </button>
+                <div className={styles.actionsRow}>
+                  {onOpenGame ? (
+                    <button
+                      type="button"
+                      className={styles.btnPrimary}
+                      onClick={() => onOpenGame(game.id)}
+                    >
+                      Detalhes
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    className={styles.btnSecondary}
+                    aria-pressed={game.isFavorite}
+                    onClick={() => void onToggleFavorite(game.id)}
+                  >
+                    <Star
+                      size={14}
+                      aria-hidden="true"
+                      fill={game.isFavorite ? 'currentColor' : 'none'}
+                      style={{ marginRight: 6, verticalAlign: 'middle' }}
+                    />
+                    {game.isFavorite ? 'Favorito' : 'Favoritar'}
+                  </button>
+                </div>
               </li>
             ))}
           </ul>

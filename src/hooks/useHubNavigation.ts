@@ -5,6 +5,7 @@ export type HubSectionId =
   | 'consoles'
   | 'library'
   | 'profile'
+  | 'statistics'
   | 'trophies'
   | 'emulators'
   | 'settings';
@@ -14,6 +15,7 @@ export const HUB_SECTIONS: HubSectionId[] = [
   'consoles',
   'library',
   'profile',
+  'statistics',
   'trophies',
   'emulators',
   'settings',

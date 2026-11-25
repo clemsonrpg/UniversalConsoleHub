@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { CapabilityBadge } from '../components/CapabilityBadge';
+import { FilePathField } from '../components/FilePathField';
 import { ReadinessTracker } from '../components/ReadinessTracker';
 import type {
   EmulatorRecord,
@@ -108,13 +109,16 @@ export function EmulatorsPage({
             <label className={styles.label} htmlFor="rpcs3-exe-path">
               Caminho local do rpcs3.exe
             </label>
-            <input
+            <FilePathField
               id="rpcs3-exe-path"
-              className={styles.input}
+              mode="file"
+              dialogTitle="Selecionar executável rpcs3.exe"
+              filters={[{ name: 'Executáveis Windows', extensions: ['exe'] }]}
               required
               value={rpcs3Path}
-              onChange={(e) => setRpcs3Path(e.target.value)}
+              onChange={setRpcs3Path}
               placeholder="C:\Emulators\RPCS3\rpcs3.exe"
+              disabled={busy}
             />
           </div>
           <div className={styles.actionsRow} style={{ alignSelf: 'end' }}>
@@ -137,13 +141,16 @@ export function EmulatorsPage({
             <label className={styles.label} htmlFor="ps3-pup-path">
               Validar pacote PS3UPDAT.PUP fornecido pelo usuário (SHA-256 local)
             </label>
-            <input
+            <FilePathField
               id="ps3-pup-path"
-              className={styles.input}
+              mode="file"
+              dialogTitle="Selecionar pacote PS3UPDAT.PUP fornecido pelo usuário"
+              filters={[{ name: 'Firmware PS3', extensions: ['pup', 'PUP'] }]}
               required
               value={firmwarePath}
-              onChange={(e) => setFirmwarePath(e.target.value)}
+              onChange={setFirmwarePath}
               placeholder="C:\Firmware\PS3UPDAT.PUP"
+              disabled={busy}
             />
           </div>
           <div className={styles.actionsRow} style={{ alignSelf: 'end' }}>
