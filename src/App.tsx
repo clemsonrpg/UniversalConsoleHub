@@ -6,7 +6,7 @@ import {
 } from './api/tauriClient';
 import { AppShell } from './components/AppShell';
 import { useHubNavigation, type HubSectionId } from './hooks/useHubNavigation';
-import { ConsoleDetailsPage } from './pages/ConsoleDetailsPage';
+import { ConsoleEnvironmentPage } from './pages/ConsoleEnvironmentPage';
 import { ConsolesPage } from './pages/ConsolesPage';
 import { EmulatorsPage } from './pages/EmulatorsPage';
 import { HomePage } from './pages/HomePage';
@@ -16,9 +16,10 @@ import { ProfilePage } from './pages/ProfilePage';
 import { SettingsPage } from './pages/SettingsPage';
 import { TrophiesPage } from './pages/TrophiesPage';
 import type {
-  ConsoleDetailsDto,
+  ConsoleEnvironmentDto,
   HubBootstrapDto,
   RegisterGameRequest,
+  ScanProgressEvent,
   UpdateProfileRequest,
 } from './types/domain';
 
@@ -37,14 +38,14 @@ export function App() {
 
   const [section, setSection] = useState<HubSectionId>('home');
   const [selectedConsoleSlug, setSelectedConsoleSlug] = useState<string | null>(null);
-  const [consoleDetails, setConsoleDetails] = useState<ConsoleDetailsDto | null>(null);
+  const [consoleEnv, setConsoleEnv] = useState<ConsoleEnvironmentDto | null>(null);
   const [bootstrap, setBootstrap] = useState<HubBootstrapDto | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const handleSelectSection = useCallback((next: HubSectionId) => {
     setSection(next);
     setSelectedConsoleSlug(null);
-    setConsoleDetails(null);
+    setConsoleEnv(null);
   }, []);
 
   useHubNavigation(section, handleSelectSection);
@@ -64,20 +65,26 @@ export function App() {
     void refreshBootstrap();
   }, [refreshBootstrap]);
 
-  const openConsoleDetails = useCallback(
+  const openConsoleEnvironment = useCallback(
     async (slug: string) => {
       if (!clientResolution.client) return;
       setSection('consoles');
       setSelectedConsoleSlug(slug);
       try {
-        const details = await clientResolution.client.getConsoleDetails(slug);
-        setConsoleDetails(details);
+        const env = await clientResolution.client.getConsoleEnvironment(slug);
+        setConsoleEnv(env);
       } catch (err) {
         setLoadError(String(err));
       }
     },
     [clientResolution.client]
   );
+
+  const refreshActiveConsoleEnv = useCallback(async () => {
+    if (!clientResolution.client || !selectedConsoleSlug) return;
+    const env = await clientResolution.client.getConsoleEnvironment(selectedConsoleSlug);
+    setConsoleEnv(env);
+  }, [clientResolution.client, selectedConsoleSlug]);
 
   if (clientResolution.error instanceof DesktopRuntimeRequiredError) {
     return (
@@ -139,6 +146,40 @@ export function App() {
   const handleToggleFavorite = async (gameId: string) => {
     await client.toggleGameFavorite(gameId);
     await refreshBootstrap();
+    await refreshActiveConsoleEnv();
+  };
+
+  const handleAddScanPath = async (
+    consoleSlug: string,
+    directoryPath: string,
+    recursive: boolean
+  ) => {
+    await client.addConsoleScanPath(consoleSlug, directoryPath, recursive);
+    await refreshActiveConsoleEnv();
+  };
+
+  const handleRemoveScanPath = async (pathId: string) => {
+    await client.removeConsoleScanPath(pathId);
+    await refreshActiveConsoleEnv();
+  };
+
+  const handleScanLibrary = async (
+    consoleSlug: string,
+    onProgress?: (evt: ScanProgressEvent) => void
+  ) => {
+    const summary = await client.scanConsoleLibrary(consoleSlug, onProgress);
+    await refreshBootstrap();
+    await refreshActiveConsoleEnv();
+    return summary;
+  };
+
+  const handleUpdateConsoleSetting = async (
+    consoleSlug: string,
+    key: string,
+    value: string
+  ) => {
+    await client.updateConsoleSetting(consoleSlug, key, value);
+    await refreshActiveConsoleEnv();
   };
 
   const handleConfigureEmulator = async (slug: string, exePath: string) => {
@@ -181,7 +222,7 @@ export function App() {
         <HomePage
           data={bootstrap}
           onNavigate={handleSelectSection}
-          onSelectConsole={(slug) => void openConsoleDetails(slug)}
+          onSelectConsole={(slug) => void openConsoleEnvironment(slug)}
         />
       ) : null}
 
@@ -189,18 +230,24 @@ export function App() {
         <ConsolesPage
           consoles={bootstrap.consoles}
           emulators={bootstrap.emulators}
-          onSelectConsole={(slug) => void openConsoleDetails(slug)}
+          onSelectConsole={(slug) => void openConsoleEnvironment(slug)}
         />
       ) : null}
 
-      {section === 'consoles' && selectedConsoleSlug && consoleDetails ? (
-        <ConsoleDetailsPage
-          details={consoleDetails}
+      {section === 'consoles' && selectedConsoleSlug && consoleEnv ? (
+        <ConsoleEnvironmentPage
+          environment={consoleEnv}
           onBack={() => {
             setSelectedConsoleSlug(null);
-            setConsoleDetails(null);
+            setConsoleEnv(null);
           }}
           onOpenEmulators={() => handleSelectSection('emulators')}
+          onOpenGame={() => handleSelectSection('library')}
+          onToggleFavorite={handleToggleFavorite}
+          onAddScanPath={handleAddScanPath}
+          onRemoveScanPath={handleRemoveScanPath}
+          onScanLibrary={handleScanLibrary}
+          onUpdateConsoleSetting={handleUpdateConsoleSetting}
         />
       ) : null}
 

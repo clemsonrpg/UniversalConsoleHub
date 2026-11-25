@@ -34,7 +34,7 @@ export function HomePage({ data, onNavigate, onSelectConsole }: HomePageProps) {
             className={styles.btnPrimary}
             onClick={() => onSelectConsole('ps3')}
           >
-            Inspecionar PlayStation 3
+            Entrar no PlayStation 3
           </button>
           <button
             type="button"

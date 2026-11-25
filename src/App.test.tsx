@@ -30,6 +30,10 @@ describe('App Phase 1 functional UI flows (unit layer with injected test transpo
     });
     fireEvent.click(screen.getByRole('button', { name: /Abrir detalhes de PlayStation 3/i }));
     await waitFor(() => {
+      expect(screen.getByRole('tab', { name: /Emulador & Verificações/i })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('tab', { name: /Emulador & Verificações/i }));
+    await waitFor(() => {
       expect(screen.getByText(/Matriz de Capacidades por Funcionalidade/i)).toBeInTheDocument();
     });
 

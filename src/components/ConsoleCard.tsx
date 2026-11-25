@@ -1,4 +1,5 @@
 import type { ConsoleRecord } from '../types/domain';
+import { formatIntegrationStage } from '../utils/formatters';
 import { CapabilityBadge } from './CapabilityBadge';
 import styles from './ConsoleCard.module.css';
 
@@ -6,19 +7,6 @@ export interface ConsoleCardProps {
   consoleRecord: ConsoleRecord;
   emulatorName?: string;
   onSelect: (slug: string) => void;
-}
-
-function formatPhaseLabel(status: string): string {
-  switch (status) {
-    case 'phase_1_prepared_phase_4_full':
-      return 'Fase 1: Prep · Fase 4: Completo';
-    case 'planned_phase_5_experimental':
-      return 'Fase 5 · Experimental';
-    case 'planned_phase_5':
-      return 'Planejado · Fase 5';
-    default:
-      return status;
-  }
 }
 
 export function ConsoleCard({ consoleRecord, emulatorName, onSelect }: ConsoleCardProps) {
@@ -37,7 +25,9 @@ export function ConsoleCard({ consoleRecord, emulatorName, onSelect }: ConsoleCa
             {emulatorName ? ` · ${emulatorName}` : ''}
           </div>
         </div>
-        <span className={styles.phaseTag}>{formatPhaseLabel(consoleRecord.phaseStatus)}</span>
+        <span className={styles.phaseTag}>
+          {formatIntegrationStage(consoleRecord.phaseStatus)}
+        </span>
       </div>
 
       <div className={styles.badges}>

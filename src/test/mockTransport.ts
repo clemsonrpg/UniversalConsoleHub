@@ -1,12 +1,24 @@
 import type { HubTransport } from '../api/tauriClient';
 import type {
+  BackupFileEntry,
+  BackupInspectionReport,
   BackupReport,
   ConsoleDetailsDto,
+  ConsoleEnvironmentDto,
+  ConsoleScanPath,
+  ConsoleSetting,
   FirmwareRecordDto,
+  GameDetailsDto,
   GameRecord,
+  GameVersionRecord,
   HubBootstrapDto,
+  LiveRestoreReport,
   PlayerProfile,
   RegisterGameRequest,
+  ScanProgressEvent,
+  ScanSummaryDto,
+  StatisticsOverview,
+  UpdateGameMetadataRequest,
   UpdateProfileRequest,
 } from '../types/domain';
 
@@ -168,6 +180,10 @@ export function createFixtureBootstrap(): HubBootstrapDto {
  */
 export function createStatefulTestTransport(): HubTransport {
   const state = createFixtureBootstrap();
+  const scanPaths: ConsoleScanPath[] = [];
+  const consoleSettings: ConsoleSetting[] = [];
+  const gameVersions: GameVersionRecord[] = [];
+  const backups: Array<{ entry: BackupFileEntry; snapshot: HubBootstrapDto }> = [];
 
   return {
     kind: 'injected_test',
@@ -175,6 +191,265 @@ export function createStatefulTestTransport(): HubTransport {
       switch (command) {
         case 'get_hub_bootstrap':
           return structuredClone(state) as T;
+        case 'get_console_environment': {
+          const slug = String(args?.slug ?? '');
+          const found = state.consoles.find((c) => c.slug === slug);
+          if (!found) throw new Error(`Console '${slug}' não encontrado`);
+          const isAuthentic =
+            found.capabilities.supportedStates.includes('FULL_SYSTEM_BOOT') &&
+            found.capabilities.supportedStates.includes('ORIGINAL_DASHBOARD');
+          const env: ConsoleEnvironmentDto = {
+            console: structuredClone(found),
+            emulator: structuredClone(
+              state.emulators.find((e) => e.consoleSlug === slug) ?? null
+            ),
+            environmentMode: isAuthentic
+              ? 'authentic_system_capable'
+              : 'integrated_alternative_only',
+            games: structuredClone(state.games.filter((g) => g.consoleSlug === slug)),
+            scanPaths: structuredClone(scanPaths.filter((p) => p.consoleSlug === slug)),
+            settings: structuredClone(consoleSettings.filter((s) => s.consoleSlug === slug)),
+            firmwareRecords: structuredClone(
+              state.firmwareRecords.filter((f) => f.consoleSlug === slug)
+            ),
+            runtimeVerifications: [],
+            rpcs3Inspection: slug === 'ps3' ? structuredClone(state.rpcs3Inspection) : null,
+          };
+          return env as T;
+        }
+        case 'add_console_scan_path': {
+          const consoleSlug = String(args?.consoleSlug ?? 'ps3');
+          const directoryPath = String(args?.directoryPath ?? '');
+          const recursive = Boolean(args?.recursive ?? true);
+          const item: ConsoleScanPath = {
+            id: `sp-${scanPaths.length + 1}`,
+            consoleId: `console-${consoleSlug}`,
+            consoleSlug,
+            directoryPath,
+            recursive,
+            enabled: true,
+            lastScannedAt: null,
+            createdAt: '2026-11-25T22:00:00Z',
+          };
+          scanPaths.push(item);
+          return structuredClone(item) as T;
+        }
+        case 'remove_console_scan_path': {
+          const pathId = String(args?.pathId ?? '');
+          const idx = scanPaths.findIndex((p) => p.id === pathId);
+          if (idx >= 0) {
+            scanPaths.splice(idx, 1);
+            return true as T;
+          }
+          return false as T;
+        }
+        case 'scan_console_library': {
+          const consoleSlug = String(args?.consoleSlug ?? 'ps3');
+          const onProgress = args?.onProgress as ((evt: ScanProgressEvent) => void) | undefined;
+          const matching = scanPaths.filter((p) => p.consoleSlug === consoleSlug);
+          onProgress?.({
+            event: 'started',
+            data: { consoleSlug, totalDirectories: matching.length },
+          });
+          let gamesAdded = 0;
+          let versionsAdded = 0;
+          let skippedExisting = 0;
+          if (matching.length > 0 && consoleSlug === 'ps3') {
+            const exists = state.games.some((g) => g.canonicalKey === 'serial:BLUS30443');
+            if (!exists) {
+              const g: GameRecord = {
+                id: `game-${state.games.length + 1}`,
+                consoleId: 'console-ps3',
+                consoleSlug: 'ps3',
+                canonicalKey: 'serial:BLUS30443',
+                title: "Demon's Souls",
+                description: '',
+                developer: null,
+                publisher: null,
+                releaseYear: null,
+                genre: null,
+                coverPath: null,
+                metadataSource: 'ps3_param_sfo',
+                installState: 'registered',
+                associatedEmulatorId: 'emu-rpcs3',
+                totalPlaytimeSeconds: 0,
+                lastPlayedAt: null,
+                completionPercent: 0,
+                isFavorite: false,
+                versionCount: 1,
+              };
+              state.games.push(g);
+              gameVersions.push({
+                id: `gv-${gameVersions.length + 1}`,
+                gameId: g.id,
+                versionLabel: '01.00',
+                region: 'USA',
+                serialCode: 'BLUS30443',
+                filePath: `${matching[0]!.directoryPath}\\DemonsSouls\\PS3_GAME\\USRDIR\\EBOOT.BIN`,
+                installState: 'registered',
+                createdAt: '2026-11-25T22:00:00Z',
+              });
+              state.statistics.gamesRegistered = state.games.length;
+              gamesAdded = 1;
+              versionsAdded = 1;
+              onProgress?.({
+                event: 'gameDiscovered',
+                data: {
+                  title: g.title,
+                  serialCode: 'BLUS30443',
+                  filePath: `${matching[0]!.directoryPath}\\DemonsSouls\\PS3_GAME\\USRDIR\\EBOOT.BIN`,
+                },
+              });
+            } else {
+              skippedExisting = 1;
+            }
+          }
+          const summary: ScanSummaryDto = {
+            consoleSlug,
+            scannedDirectories: matching.length,
+            scannedFiles: matching.length * 3,
+            gamesAdded,
+            versionsAdded,
+            skippedExisting,
+            errors: [],
+          };
+          onProgress?.({
+            event: 'completed',
+            data: {
+              scannedFiles: summary.scannedFiles,
+              gamesAdded,
+              versionsAdded,
+              skippedExisting,
+            },
+          });
+          return summary as T;
+        }
+        case 'update_console_setting': {
+          const consoleSlug = String(args?.consoleSlug ?? 'ps3');
+          const key = String(args?.key ?? '');
+          const value = String(args?.value ?? '');
+          const existing = consoleSettings.find(
+            (s) => s.consoleSlug === consoleSlug && s.key === key
+          );
+          if (existing) {
+            existing.value = value;
+            existing.updatedAt = '2026-11-25T22:05:00Z';
+            return structuredClone(existing) as T;
+          }
+          const created: ConsoleSetting = {
+            id: `cs-${consoleSettings.length + 1}`,
+            consoleId: `console-${consoleSlug}`,
+            consoleSlug,
+            key,
+            value,
+            updatedAt: '2026-11-25T22:05:00Z',
+          };
+          consoleSettings.push(created);
+          return structuredClone(created) as T;
+        }
+        case 'get_game_details': {
+          const gameId = String(args?.gameId ?? '');
+          const game = state.games.find((g) => g.id === gameId);
+          if (!game) throw new Error(`Jogo '${gameId}' não encontrado`);
+          const dto: GameDetailsDto = {
+            game: structuredClone(game),
+            versions: structuredClone(gameVersions.filter((v) => v.gameId === gameId)),
+            sessions: [],
+          };
+          return dto as T;
+        }
+        case 'update_game_metadata': {
+          const req = args?.request as UpdateGameMetadataRequest;
+          const game = state.games.find((g) => g.id === req.gameId);
+          if (!game) throw new Error('Jogo não encontrado');
+          game.description = req.description;
+          game.developer = req.developer;
+          game.publisher = req.publisher;
+          game.releaseYear = req.releaseYear;
+          game.genre = req.genre;
+          game.completionPercent = req.completionPercent;
+          return structuredClone(game) as T;
+        }
+        case 'set_game_cover': {
+          const gameId = String(args?.gameId ?? '');
+          const sourceImagePath = String(args?.sourceImagePath ?? '');
+          const game = state.games.find((g) => g.id === gameId);
+          if (!game) throw new Error('Jogo não encontrado');
+          game.coverPath = sourceImagePath;
+          return structuredClone(game) as T;
+        }
+        case 'get_statistics_overview': {
+          const overview: StatisticsOverview = {
+            totalPlaytimeSeconds: state.statistics.totalPlaytimeSeconds,
+            totalSessions: 0,
+            gamesRegistered: state.games.length,
+            gamesStarted: state.statistics.gamesStarted,
+            gamesCompleted: state.games.filter((g) => g.completionPercent === 100).length,
+            completionRatePercent:
+              state.games.length > 0
+                ? Math.floor(
+                    (state.games.filter((g) => g.completionPercent === 100).length * 100) /
+                      state.games.length
+                  )
+                : 0,
+            byConsole: state.consoles.map((c) => ({
+              consoleSlug: c.slug,
+              consoleName: c.name,
+              gamesCount: state.games.filter((g) => g.consoleSlug === c.slug).length,
+              sessionsCount: 0,
+              totalPlaytimeSeconds: 0,
+            })),
+            topGames: [],
+            monthlyPlaytime: [],
+          };
+          return overview as T;
+        }
+        case 'list_activity_history': {
+          const filter = args?.eventTypeFilter as string | null | undefined;
+          const items =
+            filter && filter !== 'all'
+              ? state.recentActivity.filter((e) => e.eventType === filter)
+              : state.recentActivity;
+          return structuredClone(items) as T;
+        }
+        case 'list_database_backups':
+          return structuredClone(backups.map((b) => b.entry)) as T;
+        case 'inspect_database_backup': {
+          const backupPath = String(args?.backupPath ?? '');
+          const match = backups.find((b) => b.entry.backupPath === backupPath);
+          const report: BackupInspectionReport = {
+            backupPath,
+            sizeBytes: match?.entry.sizeBytes ?? 98304,
+            integrityOk: true,
+            schemaVersion: 2,
+            profilesCount: 1,
+            gamesCount: match?.snapshot.games.length ?? state.games.length,
+            inspectedAt: '2026-11-25T22:10:00Z',
+          };
+          return report as T;
+        }
+        case 'restore_database_backup': {
+          const backupPath = String(args?.backupPath ?? '');
+          const match = backups.find((b) => b.entry.backupPath === backupPath);
+          if (match) {
+            const restored = structuredClone(match.snapshot);
+            state.profile = restored.profile;
+            state.games = restored.games;
+            state.statistics = restored.statistics;
+            state.settings = restored.settings;
+          }
+          const report: LiveRestoreReport = {
+            sourceBackupPath: backupPath,
+            restoredDbPath:
+              'C:\\Users\\player\\AppData\\Local\\UniversalConsoleHub\\universal_console_hub.db',
+            preRestoreSnapshotPath:
+              'C:\\Users\\player\\AppData\\Local\\UniversalConsoleHub\\backups\\pre_restore\\pre_restore_test.db',
+            integrityOk: true,
+            schemaVersion: 2,
+            restoredAt: '2026-11-25T22:11:00Z',
+          };
+          return report as T;
+        }
         case 'get_console_details': {
           const slug = String(args?.slug ?? '');
           const found = state.consoles.find((c) => c.slug === slug);
@@ -308,12 +583,24 @@ export function createStatefulTestTransport(): HubTransport {
           return structuredClone(state.settings) as T;
         }
         case 'create_database_backup': {
+          const idx = backups.length + 1;
+          const fileName = `phase2_snapshot_${idx}.db`;
+          const backupPath = `C:\\Users\\player\\AppData\\Local\\UniversalConsoleHub\\backups\\${fileName}`;
           const report: BackupReport = {
-            backupPath: 'C:\\Users\\player\\AppData\\Local\\UniversalConsoleHub\\backups\\phase1_snapshot.db',
+            backupPath,
             sizeBytes: 98304,
             integrityOk: true,
             createdAt: '2026-11-25T22:00:00Z',
           };
+          backups.unshift({
+            entry: {
+              fileName,
+              backupPath,
+              sizeBytes: report.sizeBytes,
+              modifiedAt: report.createdAt,
+            },
+            snapshot: structuredClone(state),
+          });
           return report as T;
         }
         default:
