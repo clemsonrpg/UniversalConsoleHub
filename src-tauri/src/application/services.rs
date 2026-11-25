@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::fs;
 use std::path::{Path, PathBuf};
 
 use rusqlite::params;
@@ -11,14 +10,19 @@ use crate::domain::emulator::{
     EmulatorInstallation, EmulatorRecord, FirmwarePackageReport, SystemBootReadiness,
 };
 use crate::domain::error::DomainError;
-use crate::domain::player::{
-    now_utc_rfc3339, GameRecord, GameVersionRecord, PlayerProfile, ProfileStatistics,
-};
+use crate::domain::player::{GameRecord, GameVersionRecord, PlayerProfile, ProfileStatistics};
 use crate::domain::trophy::{AchievementProviderRecord, TrophyRecord};
 use crate::infrastructure::db::manager::{BackupReport, DatabaseManager};
 use crate::infrastructure::db::repositories::{FirmwareRecordDto, SqliteRepositories};
+use crate::infrastructure::system::cover_cache::CoverCache;
 use crate::infrastructure::system::process_manager::ProcessManager;
 use crate::infrastructure::system::security::SecurityManager;
+
+use super::backup_service::BackupService;
+use super::environment_service::{ConsoleEnvironmentDto, EnvironmentService};
+use super::scanner_service::ScannerService;
+use super::session_service::SessionService;
+use super::statistics_service::StatisticsService;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -95,16 +99,93 @@ pub struct AppServices {
     pub adapters: AdapterRegistry,
     pub process_manager: ProcessManager,
     pub backup_dir: PathBuf,
+    pub cover_cache_dir: PathBuf,
+    environment: EnvironmentService,
+    scanner: ScannerService,
+    sessions: SessionService,
+    statistics: StatisticsService,
+    backups: BackupService,
 }
 
 impl AppServices {
+    /// Preserved Phase 1 constructor signature for full backward compatibility.
     pub fn new(db: DatabaseManager, adapters: AdapterRegistry, backup_dir: PathBuf) -> Self {
+        let cover_cache_dir = backup_dir
+            .parent()
+            .unwrap_or(&backup_dir)
+            .join("cache")
+            .join("covers");
+        Self::with_dirs(db, adapters, backup_dir, cover_cache_dir)
+    }
+
+    pub fn with_dirs(
+        db: DatabaseManager,
+        adapters: AdapterRegistry,
+        backup_dir: PathBuf,
+        cover_cache_dir: PathBuf,
+    ) -> Self {
+        let environment = EnvironmentService::new(db.clone(), cover_cache_dir.clone());
+        let scanner = ScannerService::new(db.clone());
+        let sessions = SessionService::new(db.clone());
+        let statistics = StatisticsService::new(db.clone());
+        let backups = BackupService::new(db.clone(), backup_dir.clone());
         Self {
             repos: SqliteRepositories::new(db),
             adapters,
             process_manager: ProcessManager::new(),
             backup_dir,
+            cover_cache_dir,
+            environment,
+            scanner,
+            sessions,
+            statistics,
+            backups,
         }
+    }
+
+    pub fn environment_service(&self) -> &EnvironmentService {
+        &self.environment
+    }
+
+    pub fn scanner_service(&self) -> &ScannerService {
+        &self.scanner
+    }
+
+    pub fn session_service(&self) -> &SessionService {
+        &self.sessions
+    }
+
+    pub fn statistics_service(&self) -> &StatisticsService {
+        &self.statistics
+    }
+
+    pub fn backup_service(&self) -> &BackupService {
+        &self.backups
+    }
+
+    pub fn get_console_environment(
+        &self,
+        slug: &str,
+    ) -> Result<ConsoleEnvironmentDto, DomainError> {
+        let rpcs3_inspection = if slug == "ps3" {
+            Some(self.inspect_rpcs3()?)
+        } else {
+            None
+        };
+        self.environment
+            .get_console_environment(slug, rpcs3_inspection)
+    }
+
+    pub fn list_games_sanitized(&self) -> Result<Vec<GameRecord>, DomainError> {
+        let profile = self.repos.get_active_profile()?;
+        let mut games = self.repos.list_games(&profile.id)?;
+        for game in &mut games {
+            game.cover_path = CoverCache::sanitize_cover_for_frontend(
+                game.cover_path.as_deref(),
+                &self.cover_cache_dir,
+            );
+        }
+        Ok(games)
     }
 
     pub fn list_recent_activity(
@@ -149,7 +230,7 @@ impl AppServices {
         let statistics = self.repos.get_profile_statistics(&profile.id)?;
         let consoles = self.repos.list_consoles()?;
         let emulators = self.repos.list_emulators()?;
-        let games = self.repos.list_games(&profile.id)?;
+        let games = self.list_games_sanitized()?;
         let achievement_providers = self.repos.list_achievement_providers()?;
         let trophies = self.repos.list_trophies(&profile.id)?;
         let firmware_records = self.repos.list_firmware_records()?;
@@ -380,29 +461,6 @@ impl AppServices {
         &self,
         file_name: Option<String>,
     ) -> Result<BackupReport, DomainError> {
-        fs::create_dir_all(&self.backup_dir).map_err(|e| {
-            DomainError::Io(format!(
-                "failed to prepare backup directory '{}': {e}",
-                self.backup_dir.display()
-            ))
-        })?;
-
-        let safe_name = match file_name {
-            Some(raw) if !raw.trim().is_empty() => raw.trim().to_string(),
-            _ => {
-                let ts = now_utc_rfc3339().replace(':', "-");
-                format!("uch_backup_{ts}.db")
-            }
-        };
-
-        if safe_name.contains(['/', '\\']) || safe_name.contains("..") {
-            return Err(DomainError::Validation(
-                "nome do backup deve ser apenas um nome de arquivo simples sem separadores ou '..'"
-                    .to_string(),
-            ));
-        }
-
-        let target = SecurityManager::ensure_within_base(&self.backup_dir, Path::new(&safe_name))?;
-        self.repos.db().create_backup(&target)
+        self.backups.create_backup(file_name)
     }
 }

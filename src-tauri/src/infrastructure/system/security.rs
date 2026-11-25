@@ -59,6 +59,26 @@ impl SecurityManager {
             })
     }
 
+    pub fn validate_existing_directory(path: &Path) -> Result<PathBuf, DomainError> {
+        let meta = fs::metadata(path).map_err(|e| {
+            DomainError::NotFound(format!(
+                "directory '{}' not accessible: {e}",
+                path.display()
+            ))
+        })?;
+        if !meta.is_dir() {
+            return Err(DomainError::Validation(format!(
+                "path '{}' is not a directory",
+                path.display()
+            )));
+        }
+        fs::canonicalize(path)
+            .map(strip_windows_verbatim_prefix)
+            .map_err(|e| {
+                DomainError::Io(format!("failed to canonicalize '{}': {e}", path.display()))
+            })
+    }
+
     pub fn ensure_within_base(base_dir: &Path, candidate: &Path) -> Result<PathBuf, DomainError> {
         let canonical_base = fs::canonicalize(base_dir).map_err(|e| {
             DomainError::Io(format!(
