@@ -1,0 +1,57 @@
+# Node / Frontend
+node_modules/
+dist/
+dist-ssr/
+*.local
+playwright-report/
+test-results/
+coverage/
+
+# Rust / Tauri
+target/
+src-tauri/target/
+src-tauri/gen/
+*.pdb
+
+# SQLite runtime files & backups
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Logs & temporary files
+logs/
+*.log
+.DS_Store
+Thumbs.db
+
+# STRICT LEGAL EXCLUSIONS — Never commit proprietary firmware, BIOS, NAND, keys, or ROMs/ISOs
+*.pup
+*.PUP
+*.iso
+*.ISO
+*.xiso
+*.XISO
+*.qcow2
+*.bin
+*.BIN
+*.rom
+*.ROM
+*.wad
+*.WAD
+*.wbfs
+*.WBFS
+*.rvz
+*.RVZ
+*.xex
+*.XEX
+*.pkg
+*.PKG
+*.sfo
+*.SFO
+*.self
+*.SELF
+*.dat
+*.DAT
+!src-tauri/icons/**
