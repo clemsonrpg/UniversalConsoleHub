@@ -5,8 +5,14 @@ use super::console::{
     VerificationLevel,
 };
 use super::emulator::{LaunchCommand, SystemBootReadiness};
+use super::environment::{
+    ConsoleEnvironmentMode, RuntimeVerificationFeature, RuntimeVerificationRecord,
+    RuntimeVerificationStatus,
+};
 use super::error::DomainError;
 use super::player::{normalize_canonical_key, validate_utc_timestamp};
+use super::scanner::ScanProgressEvent;
+use super::session::{compute_elapsed_seconds_utc, EXIT_STATUS_RECOVERED_AFTER_CRASH};
 use super::trophy::{ensure_immutable_origin, TrophyOrigin};
 
 #[test]
@@ -160,4 +166,102 @@ fn trophy_origin_is_strictly_immutable() {
         ensure_immutable_origin(TrophyOrigin::Emulator, TrophyOrigin::Official),
         Err(DomainError::ImmutableTrophyOrigin { .. })
     ));
+}
+
+#[test]
+fn derives_console_environment_mode_honestly_from_multi_capabilities() {
+    let ps3_caps = ConsoleCapabilities {
+        supported_states: vec![
+            CapabilityState::FullSystemBoot,
+            CapabilityState::OriginalDashboard,
+            CapabilityState::DirectGameOnly,
+        ],
+        features: vec![],
+    };
+    assert_eq!(
+        ConsoleEnvironmentMode::from_capabilities(&ps3_caps),
+        ConsoleEnvironmentMode::AuthenticSystemCapable
+    );
+
+    let xbox360_caps = ConsoleCapabilities {
+        supported_states: vec![
+            CapabilityState::DirectGameOnly,
+            CapabilityState::PartialDashboard,
+        ],
+        features: vec![],
+    };
+    assert_eq!(
+        ConsoleEnvironmentMode::from_capabilities(&xbox360_caps),
+        ConsoleEnvironmentMode::IntegratedAlternativeOnly
+    );
+
+    let ps4_caps = ConsoleCapabilities {
+        supported_states: vec![
+            CapabilityState::Experimental,
+            CapabilityState::DirectGameOnly,
+        ],
+        features: vec![],
+    };
+    assert_eq!(
+        ConsoleEnvironmentMode::from_capabilities(&ps4_caps),
+        ConsoleEnvironmentMode::IntegratedAlternativeOnly
+    );
+}
+
+#[test]
+fn runtime_verification_tracks_all_seven_independent_features_and_scope_keys() {
+    let all = RuntimeVerificationFeature::all();
+    assert_eq!(all.len(), 7);
+    for feat in all {
+        assert_eq!(
+            RuntimeVerificationFeature::parse(feat.as_str()).expect("roundtrip feature"),
+            feat
+        );
+    }
+    assert!(RuntimeVerificationFeature::parse("universal_compatibility").is_err());
+
+    assert_eq!(
+        RuntimeVerificationStatus::parse("runtime_confirmed").unwrap(),
+        RuntimeVerificationStatus::RuntimeConfirmed
+    );
+    assert!(RuntimeVerificationStatus::parse("fake_status").is_err());
+
+    assert_eq!(
+        RuntimeVerificationRecord::compute_scope_key(None).unwrap(),
+        "console"
+    );
+    assert_eq!(
+        RuntimeVerificationRecord::compute_scope_key(Some("game-42")).unwrap(),
+        "game-42"
+    );
+    assert!(RuntimeVerificationRecord::compute_scope_key(Some("   ")).is_err());
+}
+
+#[test]
+fn scan_progress_event_serializes_with_tauri_channel_tagged_format() {
+    let evt = ScanProgressEvent::GameDiscovered {
+        title: "Demon's Souls".to_string(),
+        serial_code: Some("BLUS30443".to_string()),
+        file_path: r"D:\PS3\DemonsSouls\PS3_GAME\USRDIR\EBOOT.BIN".to_string(),
+    };
+    let json = serde_json::to_value(&evt).expect("serialize ScanProgressEvent");
+    assert_eq!(json["event"], "gameDiscovered");
+    assert_eq!(json["data"]["title"], "Demon's Souls");
+    assert_eq!(json["data"]["serialCode"], "BLUS30443");
+}
+
+#[test]
+fn session_elapsed_calculation_uses_strict_utc_bounds_and_never_negative() {
+    assert_eq!(EXIT_STATUS_RECOVERED_AFTER_CRASH, "recovered_after_crash");
+    assert_eq!(
+        compute_elapsed_seconds_utc("2026-11-25T20:00:00Z", "2026-11-25T20:15:30Z").unwrap(),
+        930
+    );
+    // Clamps clock skew to 0 instead of returning negative duration
+    assert_eq!(
+        compute_elapsed_seconds_utc("2026-11-25T20:15:30Z", "2026-11-25T20:00:00Z").unwrap(),
+        0
+    );
+    // Rejects non-UTC timestamps
+    assert!(compute_elapsed_seconds_utc("2026-11-25 20:00:00", "2026-11-25T20:05:00Z").is_err());
 }
