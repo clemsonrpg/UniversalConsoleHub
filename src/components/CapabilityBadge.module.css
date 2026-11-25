@@ -1,0 +1,48 @@
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.full_system_boot {
+  color: var(--status-ok);
+  background: var(--status-ok-bg);
+  border-color: rgba(34, 197, 94, 0.28);
+}
+
+.original_dashboard {
+  color: var(--status-info);
+  background: var(--status-info-bg);
+  border-color: rgba(56, 189, 248, 0.28);
+}
+
+.partial_dashboard {
+  color: var(--status-warn);
+  background: var(--status-warn-bg);
+  border-color: rgba(234, 179, 8, 0.28);
+}
+
+.direct_game_only {
+  color: var(--text-primary);
+  background: var(--bg-surface-raised);
+  border-color: var(--border-strong);
+}
+
+.experimental {
+  color: var(--status-exp);
+  background: var(--status-exp-bg);
+  border-color: rgba(249, 115, 22, 0.32);
+}
+
+.unsupported {
+  color: var(--status-muted);
+  background: var(--status-muted-bg);
+  border-color: rgba(148, 163, 184, 0.25);
+}
