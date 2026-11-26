@@ -26,7 +26,8 @@ logs/
 .DS_Store
 Thumbs.db
 
-# STRICT LEGAL EXCLUSIONS — Never commit proprietary firmware, BIOS, NAND, keys, or ROMs/ISOs
+# STRICT LEGAL EXCLUSIONS — Never commit local emulator installs, proprietary firmware, BIOS, NAND, keys, or ROMs/ISOs
+emulators/
 *.pup
 *.PUP
 *.iso

@@ -35,8 +35,11 @@ export function EmulatorsPage({
   onRegisterFirmware,
 }: EmulatorsPageProps) {
   const rpcs3 = emulators.find((e) => e.slug === 'rpcs3');
+  const latestPs3Firmware = firmwareRecords.find(
+    (f) => f.consoleSlug === 'ps3' && f.emulatorSlug === 'rpcs3'
+  );
   const [rpcs3Path, setRpcs3Path] = useState(rpcs3?.executablePath ?? '');
-  const [firmwarePath, setFirmwarePath] = useState('');
+  const [firmwarePath, setFirmwarePath] = useState(latestPs3Firmware?.filePath ?? '');
   const [feedback, setFeedback] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -63,10 +66,9 @@ export function EmulatorsPage({
     setBusy(true);
     try {
       await onRegisterFirmware('ps3', 'rpcs3', firmwarePath);
-      setFirmwarePath('');
       setFeedback({
         kind: 'ok',
-        text: 'Arquivo de firmware validado localmente via SHA-256 (nenhum binário proprietário armazenado ou distribuído).',
+        text: 'Firmware validado localmente via SHA-256 e salvo no banco. Para habilitar o boot do PS3 XMB, instale este .PUP dentro do RPCS3 (File → Install Firmware) e clique em Reinspecionar Disco.',
       });
     } catch (err) {
       setFeedback({ kind: 'err', text: String(err) });
