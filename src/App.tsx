@@ -183,6 +183,10 @@ export function App() {
       } else if (next === 'themes') {
         void refreshInstalledThemes();
       }
+      if (typeof document !== 'undefined') {
+        document.documentElement.scrollTop = 0;
+        document.body.scrollTop = 0;
+      }
       window.setTimeout(() => globalFocusManager.focusSectionEntry(next, false), 0);
     },
     [section, refreshBackups, refreshStatistics, refreshTrophyOverview, refreshInstalledThemes]

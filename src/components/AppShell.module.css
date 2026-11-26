@@ -73,22 +73,27 @@
 .bladesNavRow {
   display: flex;
   align-items: stretch;
-  gap: 4px;
+  gap: 2px;
   padding: 0 var(--space-4);
   overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.bladesNavRow::-webkit-scrollbar {
+  display: none;
 }
 
 .bladeBtn {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 12px 18px;
+  gap: 7px;
+  padding: 11px 13px;
   border: none;
   border-bottom: 3px solid transparent;
   background: transparent;
   color: var(--text-secondary);
   font-family: var(--font-display);
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
   font-weight: 600;
   white-space: nowrap;
   transition: background-color var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
@@ -110,9 +115,9 @@
   position: sticky;
   top: 0;
   z-index: 25;
-  background: rgba(11, 12, 14, 0.92);
+  background: var(--bg-rail);
   border-bottom: 1px solid var(--border-subtle);
-  padding: 12px var(--space-5);
+  padding: 10px var(--space-5);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -123,19 +128,25 @@
 .dockNav {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px;
+  gap: 2px;
+  padding: 3px;
   border-radius: 999px;
   border: 1px solid var(--border-subtle);
   background: var(--bg-surface);
   overflow-x: auto;
+  scrollbar-width: none;
+  max-width: 100%;
+}
+
+.dockNav::-webkit-scrollbar {
+  display: none;
 }
 
 .dockBtn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 7px 14px;
+  gap: 5px;
+  padding: 6px 11px;
   border-radius: 999px;
   border: 1px solid transparent;
   background: transparent;
@@ -146,11 +157,12 @@
   transition: background-color var(--transition-fast), color var(--transition-fast);
 }
 
-.dockBtn:hover {
+.dockBtn:hover:not(.dockBtnActive) {
   color: var(--text-primary);
 }
 
-.dockBtnActive {
+.dockBtnActive,
+.dockBtnActive:hover {
   background: var(--accent-primary);
   color: var(--accent-contrast-text);
   font-weight: 600;
@@ -185,7 +197,12 @@
   align-items: center;
   gap: var(--space-2);
   overflow-x: auto;
+  scrollbar-width: none;
   padding: 4px 2px;
+}
+
+.xmbCrossbar::-webkit-scrollbar {
+  display: none;
 }
 
 .xmbCatBtn {
