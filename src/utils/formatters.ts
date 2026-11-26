@@ -4,6 +4,7 @@ import type {
   FeatureKey,
   RuntimeVerificationFeature,
   RuntimeVerificationStatus,
+  TrophyCategory,
   TrophyOrigin,
   TrophySyncReadiness,
   VerificationLevel,
@@ -65,6 +66,17 @@ const TROPHY_ORIGIN_LABELS: Record<TrophyOrigin, string> = {
   local: 'Local (Hub)',
 };
 
+const TROPHY_CATEGORY_LABELS: Record<TrophyCategory, string> = {
+  bronze: 'Bronze',
+  silver: 'Prata',
+  gold: 'Ouro',
+  platinum: 'Platina',
+  xbox_achievement: 'Conquista Xbox',
+  steam_achievement: 'Conquista Steam',
+  emulator_achievement: 'Emulador',
+  hub_local: 'Local (Hub)',
+};
+
 const FIRMWARE_STATUS_LABELS: Record<string, string> = {
   package_header_and_hash_validated: 'Cabeçalho e SHA-256 validados',
   file_hash_recorded_phase_1: 'Hash SHA-256 registrado localmente',
@@ -74,6 +86,7 @@ const FIRMWARE_STATUS_LABELS: Record<string, string> = {
 const METADATA_SOURCE_LABELS: Record<string, string> = {
   manual_user_entry: 'Cadastro manual',
   ps3_param_sfo: 'PARAM.SFO (PS3)',
+  rpcs3_trophy_set: 'Conjunto de Troféus RPCS3',
   filesystem_filename_scan: 'Scanner de arquivos locais',
 };
 
@@ -94,6 +107,7 @@ const ACTIVITY_EVENT_LABELS: Record<string, string> = {
   console_profile_synced: 'Perfil do console sincronizado',
   session_completed: 'Sessão encerrada',
   session_recovered: 'Sessão recuperada',
+  trophies_unlocked: 'Troféus desbloqueados',
 };
 
 const DATA_ORIGIN_LABELS: Record<DataOrigin, string> = {
@@ -159,6 +173,10 @@ export function formatRuntimeVerificationStatus(status: RuntimeVerificationStatu
 
 export function formatTrophyOrigin(origin: TrophyOrigin): string {
   return TROPHY_ORIGIN_LABELS[origin] ?? fallbackHumanize(origin);
+}
+
+export function formatTrophyCategory(category: TrophyCategory): string {
+  return TROPHY_CATEGORY_LABELS[category] ?? fallbackHumanize(category);
 }
 
 export function formatFirmwareValidationStatus(raw: string): string {

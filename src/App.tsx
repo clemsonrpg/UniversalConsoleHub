@@ -19,17 +19,21 @@ import { ProfilePage } from './pages/ProfilePage';
 import { SettingsPage } from './pages/SettingsPage';
 import { StatisticsPage } from './pages/StatisticsPage';
 import { TrophiesPage } from './pages/TrophiesPage';
+import trophyStyles from './pages/TrophiesPage.module.css';
 import type {
   ActiveSessionSnapshot,
   ActivityEntryDto,
   BackupFileEntry,
   ConsoleEnvironmentDto,
   ConsoleProfileOverviewDto,
+  DetailedTrophyRow,
   GameDetailsDto,
   HubBootstrapDto,
+  NewlyUnlockedTrophy,
   RecordRuntimeVerificationRequest,
   ScanProgressEvent,
   StatisticsOverview,
+  TrophyCenterOverviewDto,
   UpdateGameMetadataRequest,
   UpdateProfileRequest,
 } from './types/domain';
@@ -65,7 +69,12 @@ export function App() {
   const [selectedConsoleSlug, setSelectedConsoleSlug] = useState<string | null>(null);
   const [consoleEnv, setConsoleEnv] = useState<ConsoleEnvironmentDto | null>(null);
   const [consoleProfile, setConsoleProfile] = useState<ConsoleProfileOverviewDto | null>(null);
+  const [consoleTrophyOverview, setConsoleTrophyOverview] =
+    useState<TrophyCenterOverviewDto | null>(null);
+  const [trophyOverview, setTrophyOverview] = useState<TrophyCenterOverviewDto | null>(null);
+  const [recentUnlockedToast, setRecentUnlockedToast] = useState<NewlyUnlockedTrophy[]>([]);
   const [selectedGameDetails, setSelectedGameDetails] = useState<GameDetailsDto | null>(null);
+  const [selectedGameTrophies, setSelectedGameTrophies] = useState<DetailedTrophyRow[]>([]);
   const [activeSession, setActiveSession] = useState<ActiveSessionSnapshot>(IDLE_SESSION);
   const [statsOverview, setStatsOverview] = useState<StatisticsOverview | null>(null);
   const [activityItems, setActivityItems] = useState<ActivityEntryDto[]>([]);
@@ -108,14 +117,28 @@ export function App() {
     }
   }, [clientResolution.client]);
 
+  const refreshTrophyOverview = useCallback(async () => {
+    if (!clientResolution.client) return;
+    try {
+      const overview = await clientResolution.client.getTrophyCenterOverview(null);
+      setTrophyOverview(overview);
+    } catch {
+      // Fallback safely if legacy test transport does not register Phase 4 command
+    }
+  }, [clientResolution.client]);
+
   const refreshActiveConsoleEnv = useCallback(async () => {
     if (!clientResolution.client || !selectedConsoleSlug) return;
-    const [env, profile] = await Promise.all([
+    const [env, profile, consoleTrophies] = await Promise.all([
       clientResolution.client.getConsoleEnvironment(selectedConsoleSlug),
       clientResolution.client.getConsoleProfile(selectedConsoleSlug).catch(() => null),
+      selectedConsoleSlug === 'ps3'
+        ? clientResolution.client.getTrophyCenterOverview('ps3').catch(() => null)
+        : Promise.resolve(null),
     ]);
     setConsoleEnv(env);
     setConsoleProfile(profile);
+    setConsoleTrophyOverview(consoleTrophies);
   }, [clientResolution.client, selectedConsoleSlug]);
 
   const handleSelectSection = useCallback(
@@ -124,14 +147,18 @@ export function App() {
       setSelectedConsoleSlug(null);
       setConsoleEnv(null);
       setConsoleProfile(null);
+      setConsoleTrophyOverview(null);
       setSelectedGameDetails(null);
+      setSelectedGameTrophies([]);
       if (next === 'statistics') {
         void refreshStatistics();
       } else if (next === 'settings') {
         void refreshBackups();
+      } else if (next === 'trophies') {
+        void refreshTrophyOverview();
       }
     },
-    [refreshBackups, refreshStatistics]
+    [refreshBackups, refreshStatistics, refreshTrophyOverview]
   );
 
   // Suspend Hub keyboard shortcuts while a live emulator session is active
@@ -161,6 +188,16 @@ export function App() {
         void refreshBootstrap();
         void refreshActiveConsoleEnv();
       },
+      onTrophiesSynced: () => {
+        void refreshBootstrap();
+        void refreshTrophyOverview();
+        void refreshActiveConsoleEnv();
+      },
+      onTrophiesUnlocked: (unlocked) => {
+        if (unlocked.length > 0) {
+          setRecentUnlockedToast(unlocked);
+        }
+      },
     }).then((unlisten) => {
       cleanup = unlisten;
     });
@@ -168,7 +205,7 @@ export function App() {
     return () => {
       cleanup?.();
     };
-  }, [refreshBootstrap, refreshActiveConsoleEnv]);
+  }, [refreshBootstrap, refreshActiveConsoleEnv, refreshTrophyOverview]);
 
   const openConsoleEnvironment = useCallback(
     async (slug: string) => {
@@ -176,13 +213,18 @@ export function App() {
       setSection('consoles');
       setSelectedConsoleSlug(slug);
       setSelectedGameDetails(null);
+      setSelectedGameTrophies([]);
       try {
-        const [env, profile] = await Promise.all([
+        const [env, profile, consoleTrophies] = await Promise.all([
           clientResolution.client.getConsoleEnvironment(slug),
           clientResolution.client.getConsoleProfile(slug).catch(() => null),
+          slug === 'ps3'
+            ? clientResolution.client.getTrophyCenterOverview('ps3').catch(() => null)
+            : Promise.resolve(null),
         ]);
         setConsoleEnv(env);
         setConsoleProfile(profile);
+        setConsoleTrophyOverview(consoleTrophies);
       } catch (err) {
         setLoadError(String(err));
       }
@@ -194,8 +236,12 @@ export function App() {
     async (gameId: string) => {
       if (!clientResolution.client) return;
       try {
-        const details = await clientResolution.client.getGameDetails(gameId);
+        const [details, gameTrophies] = await Promise.all([
+          clientResolution.client.getGameDetails(gameId),
+          clientResolution.client.listGameTrophies(gameId).catch(() => []),
+        ]);
         setSelectedGameDetails(details);
+        setSelectedGameTrophies(gameTrophies);
       } catch (err) {
         setLoadError(String(err));
       }
@@ -326,6 +372,21 @@ export function App() {
     return report;
   };
 
+  const handleSyncConsoleTrophies = async (consoleSlug: string) => {
+    const report = await client.syncConsoleTrophies(consoleSlug);
+    if (report.newlyUnlocked.length > 0) {
+      setRecentUnlockedToast(report.newlyUnlocked);
+    }
+    await Promise.all([refreshBootstrap(), refreshTrophyOverview(), refreshActiveConsoleEnv()]);
+    if (selectedGameDetails) {
+      const updatedTrophies = await client
+        .listGameTrophies(selectedGameDetails.game.id)
+        .catch(() => []);
+      setSelectedGameTrophies(updatedTrophies);
+    }
+    return report;
+  };
+
   const handleLaunchConsoleSystem = async (consoleSlug: string) => {
     const snap = await client.launchConsoleSystem(consoleSlug);
     setActiveSession(snap);
@@ -396,6 +457,28 @@ export function App() {
     return report;
   };
 
+  const effectiveTrophyOverview: TrophyCenterOverviewDto = trophyOverview ?? {
+    providers: bootstrap.achievementProviders,
+    sets: [],
+    trophies: [],
+    recentUnlocks: [],
+    totals: {
+      totalSets: 0,
+      completedSets: 0,
+      totalTrophies: bootstrap.trophies.length,
+      unlockedTrophies: bootstrap.trophies.filter((t) => t.isUnlocked).length,
+      bronzeTotal: 0,
+      bronzeUnlocked: 0,
+      silverTotal: 0,
+      silverUnlocked: 0,
+      goldTotal: 0,
+      goldUnlocked: 0,
+      platinumTotal: 0,
+      platinumUnlocked: 0,
+      completionPercent: 0,
+    },
+  };
+
   return (
     <AppShell
       activeSection={section}
@@ -406,12 +489,55 @@ export function App() {
     >
       <ActiveSessionBanner session={activeSession} onStopSession={handleStopActiveSession} />
 
+      {recentUnlockedToast.length > 0 ? (
+        <div
+          className={trophyStyles.toastBanner}
+          role="status"
+          aria-live="polite"
+          aria-label="Novos troféus desbloqueados"
+        >
+          <div>
+            <strong>
+              {recentUnlockedToast.length === 1 && recentUnlockedToast[0]
+                ? `Novo troféu desbloqueado: ${recentUnlockedToast[0].name}`
+                : `${recentUnlockedToast.length} novos troféus desbloqueados`}
+            </strong>
+            <div className={pageStyles.muted}>
+              {recentUnlockedToast.map((t) => `${t.gameTitle} — ${t.name}`).join(' · ')}
+            </div>
+          </div>
+          <div className={pageStyles.actionsRow}>
+            <button
+              type="button"
+              className={pageStyles.btnSecondary}
+              onClick={() => {
+                setRecentUnlockedToast([]);
+                handleSelectSection('trophies');
+              }}
+            >
+              Ver Troféus
+            </button>
+            <button
+              type="button"
+              className={pageStyles.btnSecondary}
+              onClick={() => setRecentUnlockedToast([])}
+            >
+              Fechar
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       {selectedGameDetails ? (
         <GameDetailsPage
           details={selectedGameDetails}
+          trophies={selectedGameTrophies}
           canLaunch={selectedGameDetails.game.consoleSlug === 'ps3' && rpcs3Ready}
           activeSession={activeSession}
-          onBack={() => setSelectedGameDetails(null)}
+          onBack={() => {
+            setSelectedGameDetails(null);
+            setSelectedGameTrophies([]);
+          }}
           onToggleFavorite={handleToggleFavorite}
           onUpdateMetadata={handleUpdateGameMetadata}
           onSetCover={handleSetGameCover}
@@ -439,13 +565,16 @@ export function App() {
         <ConsoleEnvironmentPage
           environment={consoleEnv}
           consoleProfile={consoleProfile}
+          consoleTrophyOverview={consoleTrophyOverview}
           activeSession={activeSession}
           onBack={() => {
             setSelectedConsoleSlug(null);
             setConsoleEnv(null);
             setConsoleProfile(null);
+            setConsoleTrophyOverview(null);
           }}
           onOpenEmulators={() => handleSelectSection('emulators')}
+          onOpenTrophies={() => handleSelectSection('trophies')}
           onOpenGame={(gameId) => void openGameDetails(gameId)}
           onToggleFavorite={handleToggleFavorite}
           onAddScanPath={handleAddScanPath}
@@ -453,6 +582,7 @@ export function App() {
           onScanLibrary={handleScanLibrary}
           onUpdateConsoleSetting={handleUpdateConsoleSetting}
           onSyncProfile={handleSyncConsoleProfile}
+          onSyncConsoleTrophies={handleSyncConsoleTrophies}
           onLaunchSystem={handleLaunchConsoleSystem}
           onLaunchGame={handleLaunchGame}
           onRecordVerification={handleRecordRuntimeVerification}
@@ -490,8 +620,9 @@ export function App() {
 
       {!selectedGameDetails && section === 'trophies' ? (
         <TrophiesPage
-          providers={bootstrap.achievementProviders}
-          trophies={bootstrap.trophies}
+          overview={effectiveTrophyOverview}
+          onSyncConsoleTrophies={handleSyncConsoleTrophies}
+          onOpenGame={(gameId) => void openGameDetails(gameId)}
         />
       ) : null}
 

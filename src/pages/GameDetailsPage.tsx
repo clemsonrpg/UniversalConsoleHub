@@ -1,9 +1,10 @@
 import { useState, type FormEvent } from 'react';
-import { Play, Star } from 'lucide-react';
+import { Eye, EyeOff, Play, Star } from 'lucide-react';
 import { resolveCoverAssetUrl } from '../api/tauriClient';
 import { FilePathField } from '../components/FilePathField';
 import type {
   ActiveSessionSnapshot,
+  DetailedTrophyRow,
   GameDetailsDto,
   UpdateGameMetadataRequest,
 } from '../types/domain';
@@ -13,10 +14,13 @@ import {
   formatPlaytime,
   formatSessionExitStatus,
 } from '../utils/formatters';
+import { TrophyItemCard } from './TrophiesPage';
 import styles from './Pages.module.css';
+import trophyStyles from './TrophiesPage.module.css';
 
 export interface GameDetailsPageProps {
   details: GameDetailsDto;
+  trophies?: DetailedTrophyRow[];
   canLaunch?: boolean;
   activeSession?: ActiveSessionSnapshot | null;
   onBack: () => void;
@@ -28,6 +32,7 @@ export interface GameDetailsPageProps {
 
 export function GameDetailsPage({
   details,
+  trophies = [],
   canLaunch = false,
   activeSession,
   onBack,
@@ -37,6 +42,7 @@ export function GameDetailsPage({
   onLaunchGame,
 }: GameDetailsPageProps) {
   const { game, versions, sessions } = details;
+  const [showHiddenSpoilers, setShowHiddenSpoilers] = useState(false);
   const [description, setDescription] = useState(game.description);
   const [developer, setDeveloper] = useState(game.developer ?? '');
   const [publisher, setPublisher] = useState(game.publisher ?? '');
@@ -352,6 +358,47 @@ export function GameDetailsPage({
               </tbody>
             </table>
           </div>
+        )}
+      </section>
+
+      <section className={styles.section}>
+        <div className={styles.header}>
+          <h2 className={styles.sectionTitle}>
+            Troféus do Jogo ({trophies.filter((t) => t.isUnlocked).length} / {trophies.length})
+          </h2>
+          {trophies.some((t) => t.isHidden && !t.isUnlocked) ? (
+            <label className={trophyStyles.spoilerToggle}>
+              <input
+                type="checkbox"
+                checked={showHiddenSpoilers}
+                onChange={(e) => setShowHiddenSpoilers(e.target.checked)}
+              />
+              {showHiddenSpoilers ? (
+                <Eye size={14} aria-hidden="true" />
+              ) : (
+                <EyeOff size={14} aria-hidden="true" />
+              )}
+              Revelar ocultos
+            </label>
+          ) : null}
+        </div>
+        {trophies.length === 0 ? (
+          <p className={styles.muted}>
+            {game.consoleSlug === 'ps3'
+              ? 'Nenhum conjunto de troféus sincronizado para este título ainda. Sincronize na Central de Troféus após executar o jogo no RPCS3.'
+              : 'Esta plataforma não possui leitor de troféus nativos nesta fase.'}
+          </p>
+        ) : (
+          <ul className={trophyStyles.trophyList}>
+            {trophies.map((trophy) => (
+              <TrophyItemCard
+                key={trophy.id}
+                trophy={trophy}
+                showHiddenSpoilers={showHiddenSpoilers}
+                showGameTitle={false}
+              />
+            ))}
+          </ul>
         )}
       </section>
 

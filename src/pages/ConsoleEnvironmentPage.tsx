@@ -15,6 +15,8 @@ import type {
   RuntimeVerificationFeature,
   ScanProgressEvent,
   ScanSummaryDto,
+  TrophyCenterOverviewDto,
+  TrophySyncReport,
 } from '../types/domain';
 import {
   formatAvailabilityStatus,
@@ -49,9 +51,11 @@ const SEVEN_VERIFICATION_FEATURES: RuntimeVerificationFeature[] = [
 export interface ConsoleEnvironmentPageProps {
   environment: ConsoleEnvironmentDto;
   consoleProfile?: ConsoleProfileOverviewDto | null;
+  consoleTrophyOverview?: TrophyCenterOverviewDto | null;
   activeSession?: ActiveSessionSnapshot | null;
   onBack: () => void;
   onOpenEmulators: () => void;
+  onOpenTrophies?: () => void;
   onOpenGame: (gameId: string) => void;
   onToggleFavorite: (gameId: string) => Promise<void>;
   onAddScanPath: (consoleSlug: string, directoryPath: string, recursive: boolean) => Promise<void>;
@@ -62,6 +66,7 @@ export interface ConsoleEnvironmentPageProps {
   ) => Promise<ScanSummaryDto>;
   onUpdateConsoleSetting: (consoleSlug: string, key: string, value: string) => Promise<void>;
   onSyncProfile?: (consoleSlug: string) => Promise<ConsoleSyncReport>;
+  onSyncConsoleTrophies?: (consoleSlug: string) => Promise<TrophySyncReport>;
   onLaunchSystem?: (consoleSlug: string) => Promise<void>;
   onLaunchGame?: (gameId: string, versionId?: string | null) => Promise<void>;
   onRecordVerification?: (request: RecordRuntimeVerificationRequest) => Promise<void>;
@@ -70,9 +75,11 @@ export interface ConsoleEnvironmentPageProps {
 export function ConsoleEnvironmentPage({
   environment,
   consoleProfile,
+  consoleTrophyOverview,
   activeSession,
   onBack,
   onOpenEmulators,
+  onOpenTrophies,
   onOpenGame,
   onToggleFavorite,
   onAddScanPath,
@@ -80,6 +87,7 @@ export function ConsoleEnvironmentPage({
   onScanLibrary,
   onUpdateConsoleSetting,
   onSyncProfile,
+  onSyncConsoleTrophies,
   onLaunchSystem,
   onLaunchGame,
   onRecordVerification,
@@ -573,6 +581,53 @@ export function ConsoleEnvironmentPage({
               {consoleProfile?.trophyReadiness.notes ??
                 'Sincronize o perfil para verificar a disponibilidade nativa de troféus desta plataforma.'}
             </p>
+            {isPs3Playable && consoleTrophyOverview ? (
+              <div className={envStyles.progressBox}>
+                <strong>
+                  Troféus PS3 (RPCS3 local): {consoleTrophyOverview.totals.unlockedTrophies} /{' '}
+                  {consoleTrophyOverview.totals.totalTrophies} (
+                  {consoleTrophyOverview.totals.completionPercent}%)
+                </strong>
+                <span>
+                  Platina: {consoleTrophyOverview.totals.platinumUnlocked} · Ouro:{' '}
+                  {consoleTrophyOverview.totals.goldUnlocked} · Prata:{' '}
+                  {consoleTrophyOverview.totals.silverUnlocked} · Bronze:{' '}
+                  {consoleTrophyOverview.totals.bronzeUnlocked} · Conjuntos:{' '}
+                  {consoleTrophyOverview.totals.totalSets}
+                </span>
+              </div>
+            ) : null}
+            {isPs3Playable && (onSyncConsoleTrophies || onOpenTrophies) ? (
+              <div className={styles.actionsRow}>
+                {onSyncConsoleTrophies ? (
+                  <button
+                    type="button"
+                    className={styles.btnSecondary}
+                    disabled={syncing || busy}
+                    onClick={() => {
+                      setBusy(true);
+                      setFeedback(null);
+                      void onSyncConsoleTrophies(consoleRecord.slug)
+                        .then((rep) => {
+                          setFeedback({
+                            kind: 'ok',
+                            text: `Troféus PS3 sincronizados: ${rep.setsSynced} conjunto(s), ${rep.trophiesSynced} troféu(s), ${rep.newlyUnlocked.length} novo(s) desbloqueio(s).`,
+                          });
+                        })
+                        .catch((err) => setFeedback({ kind: 'err', text: String(err) }))
+                        .finally(() => setBusy(false));
+                    }}
+                  >
+                    Sincronizar Troféus RPCS3
+                  </button>
+                ) : null}
+                {onOpenTrophies ? (
+                  <button type="button" className={styles.btnSecondary} onClick={onOpenTrophies}>
+                    Abrir Central de Troféus
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
           </section>
 
           <section className={styles.section}>
