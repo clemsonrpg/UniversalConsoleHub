@@ -1,4 +1,5 @@
-import { useEffect, useId, type ReactNode } from 'react';
+import { useEffect, useId, useRef, type ReactNode } from 'react';
+import { globalFocusManager } from '../input/focusManager';
 import styles from './ConfirmDialog.module.css';
 
 export interface ConfirmDialogProps {
@@ -25,9 +26,11 @@ export function ConfirmDialog({
   children,
 }: ConfirmDialogProps) {
   const titleId = useId();
+  const modalRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!open) return;
+    globalFocusManager.pushModalFocus(modalRef.current);
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && !busy) {
         event.preventDefault();
@@ -35,7 +38,10 @@ export function ConfirmDialog({
       }
     };
     window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      globalFocusManager.popModalFocus();
+    };
   }, [open, busy, onCancel]);
 
   if (!open) return null;
@@ -43,9 +49,11 @@ export function ConfirmDialog({
   return (
     <div className={styles.backdrop}>
       <div
+        ref={modalRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
+        data-focus-scope="modal"
         className={styles.modal}
       >
         <h2 id={titleId} className={styles.title}>
@@ -56,6 +64,8 @@ export function ConfirmDialog({
           <button
             type="button"
             className={styles.cancelBtn}
+            data-dialog-cancel="true"
+            data-focus-default="true"
             disabled={busy}
             onClick={onCancel}
           >

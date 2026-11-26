@@ -8,6 +8,7 @@ export type HubSectionId =
   | 'statistics'
   | 'trophies'
   | 'emulators'
+  | 'themes'
   | 'settings';
 
 export const HUB_SECTIONS: HubSectionId[] = [
@@ -18,6 +19,7 @@ export const HUB_SECTIONS: HubSectionId[] = [
   'statistics',
   'trophies',
   'emulators',
+  'themes',
   'settings',
 ];
 
