@@ -69,6 +69,25 @@ impl SessionStatsRepository {
         emulator_id: &str,
         started_at_utc: &str,
     ) -> Result<GameSessionRecord, DomainError> {
+        self.start_session_with_local_user(
+            profile_id,
+            game_id,
+            game_version_id,
+            emulator_id,
+            None,
+            started_at_utc,
+        )
+    }
+
+    pub fn start_session_with_local_user(
+        &self,
+        profile_id: &str,
+        game_id: &str,
+        game_version_id: Option<&str>,
+        emulator_id: &str,
+        console_local_user_id: Option<&str>,
+        started_at_utc: &str,
+    ) -> Result<GameSessionRecord, DomainError> {
         validate_utc_timestamp(started_at_utc)?;
         let session_id = Uuid::new_v4().to_string();
 
@@ -78,14 +97,15 @@ impl SessionStatsRepository {
                 .map_err(|e| DomainError::Database(e.to_string()))?;
 
             tx.execute(
-                "INSERT INTO game_sessions (id, profile_id, game_id, game_version_id, emulator_id, started_at, last_heartbeat_at, ended_at, duration_seconds, exit_status)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, NULL, 0, ?7)",
+                "INSERT INTO game_sessions (id, profile_id, game_id, game_version_id, emulator_id, console_local_user_id, started_at, last_heartbeat_at, ended_at, duration_seconds, exit_status)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, NULL, 0, ?8)",
                 params![
                     session_id,
                     profile_id,
                     game_id,
                     game_version_id,
                     emulator_id,
+                    console_local_user_id,
                     started_at_utc,
                     EXIT_STATUS_RUNNING,
                 ],

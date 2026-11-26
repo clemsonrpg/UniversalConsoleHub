@@ -1,6 +1,7 @@
 pub mod backup_service;
 pub mod console_profile_sync_service;
 pub mod environment_service;
+pub mod live_session_orchestrator;
 pub mod scanner_service;
 pub mod services;
 pub mod session_service;

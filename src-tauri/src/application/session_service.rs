@@ -26,12 +26,35 @@ impl SessionService {
         emulator_id: &str,
         started_at_utc: Option<&str>,
     ) -> Result<GameSessionRecord, DomainError> {
+        self.start_recorded_session_for_local_user(
+            game_id,
+            game_version_id,
+            emulator_id,
+            None,
+            started_at_utc,
+        )
+    }
+
+    pub fn start_recorded_session_for_local_user(
+        &self,
+        game_id: &str,
+        game_version_id: Option<&str>,
+        emulator_id: &str,
+        console_local_user_id: Option<&str>,
+        started_at_utc: Option<&str>,
+    ) -> Result<GameSessionRecord, DomainError> {
         let profile = self.repos.get_active_profile()?;
         let ts = started_at_utc
             .map(str::to_string)
             .unwrap_or_else(now_utc_rfc3339);
-        self.stats_repo
-            .start_session(&profile.id, game_id, game_version_id, emulator_id, &ts)
+        self.stats_repo.start_session_with_local_user(
+            &profile.id,
+            game_id,
+            game_version_id,
+            emulator_id,
+            console_local_user_id,
+            &ts,
+        )
     }
 
     pub fn heartbeat_session(

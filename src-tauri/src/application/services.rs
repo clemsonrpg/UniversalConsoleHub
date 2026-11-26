@@ -10,9 +10,11 @@ use crate::domain::console_profile::SyncTrigger;
 use crate::domain::emulator::{
     EmulatorInstallation, EmulatorRecord, FirmwarePackageReport, SystemBootReadiness,
 };
+use crate::domain::environment::{RuntimeVerificationFeature, RuntimeVerificationStatus};
 use crate::domain::error::DomainError;
 use crate::domain::player::{GameRecord, GameVersionRecord, PlayerProfile, ProfileStatistics};
 use crate::domain::trophy::{AchievementProviderRecord, TrophyRecord};
+use crate::infrastructure::db::console_env_repo::ConsoleEnvRepository;
 use crate::infrastructure::db::manager::{BackupReport, DatabaseManager};
 use crate::infrastructure::db::repositories::{FirmwareRecordDto, SqliteRepositories};
 use crate::infrastructure::system::cover_cache::CoverCache;
@@ -22,6 +24,7 @@ use crate::infrastructure::system::security::SecurityManager;
 use super::backup_service::BackupService;
 use super::console_profile_sync_service::ConsoleProfileSyncService;
 use super::environment_service::{ConsoleEnvironmentDto, EnvironmentService};
+use super::live_session_orchestrator::LiveSessionOrchestrator;
 use super::scanner_service::ScannerService;
 use super::session_service::SessionService;
 use super::statistics_service::StatisticsService;
@@ -104,6 +107,7 @@ pub struct AppServices {
     pub cover_cache_dir: PathBuf,
     environment: EnvironmentService,
     console_profile_sync: ConsoleProfileSyncService,
+    live_sessions: LiveSessionOrchestrator,
     scanner: ScannerService,
     sessions: SessionService,
     statistics: StatisticsService,
@@ -130,6 +134,8 @@ impl AppServices {
         let environment = EnvironmentService::new(db.clone(), cover_cache_dir.clone());
         let console_profile_sync =
             ConsoleProfileSyncService::new(db.clone(), cover_cache_dir.clone());
+        let live_sessions =
+            LiveSessionOrchestrator::new(db.clone(), adapters.clone(), cover_cache_dir.clone());
         let scanner = ScannerService::new(db.clone());
         let sessions = SessionService::new(db.clone());
         let statistics = StatisticsService::new(db.clone());
@@ -142,6 +148,7 @@ impl AppServices {
             cover_cache_dir,
             environment,
             console_profile_sync,
+            live_sessions,
             scanner,
             sessions,
             statistics,
@@ -155,6 +162,10 @@ impl AppServices {
 
     pub fn console_profile_sync_service(&self) -> &ConsoleProfileSyncService {
         &self.console_profile_sync
+    }
+
+    pub fn live_session_orchestrator(&self) -> &LiveSessionOrchestrator {
+        &self.live_sessions
     }
 
     pub fn scanner_service(&self) -> &ScannerService {
@@ -375,9 +386,21 @@ impl AppServices {
             notes: vec![rec.notes],
         });
 
-        let readiness = adapter.evaluate_boot_readiness(&install, fw_report.as_ref());
-        let diagnostic = if readiness.system_files_present && readiness.command_buildable {
-            "RPCS3 detectado com arquivos de sistema presentes e comando seguro pronto; confirmação real em runtime do XMB reservada à Fase 3.".to_string()
+        let mut readiness = adapter.evaluate_boot_readiness(&install, fw_report.as_ref());
+        // Reflect real runtime XMB confirmation ONLY when recorded in console_runtime_verifications
+        let env_repo = ConsoleEnvRepository::new(self.repos.db().clone());
+        if let Ok(verifications) = env_repo.list_runtime_verifications("ps3") {
+            let confirmed = verifications.iter().any(|v| {
+                v.emulator_slug == "rpcs3"
+                    && v.feature_key == RuntimeVerificationFeature::OriginalDashboard
+                    && v.status == RuntimeVerificationStatus::RuntimeConfirmed
+            });
+            readiness.xmb_runtime_confirmed = confirmed;
+        }
+        let diagnostic = if readiness.xmb_runtime_confirmed {
+            "RPCS3 configurado com arquivos de sistema presentes e execução real do XMB confirmada em runtime.".to_string()
+        } else if readiness.system_files_present && readiness.command_buildable {
+            "RPCS3 detectado com arquivos de sistema presentes e comando seguro pronto para iniciar o PS3 XMB; confirme a execução real após testar.".to_string()
         } else {
             "RPCS3 detectado, porém arquivos de sistema (dev_flash/vsh/module/vsh.self e dev_hdd0) ainda estão ausentes.".to_string()
         };
