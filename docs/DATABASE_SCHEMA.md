@@ -11,13 +11,13 @@ PRAGMA temp_store = MEMORY;
 ```
 
 ## Política de Compatibilidade de Migrações
-- Versionamento controlado por `PRAGMA user_version` (`1` na Fase 1; `2` planejada para a Fase 2).
-- **Total de tabelas:** `19` tabelas `STRICT` na Migration `0001` (Fase 1) + `3` novas tabelas `STRICT` na Migration `0002` (Fase 2) = **`22` tabelas `STRICT`** no total.
+- Versionamento controlado por `PRAGMA user_version` (`1` na Fase 1; `2` implementada na Fase 2; `3` planejada para a Fase 3).
+- **Total de tabelas:** `19` tabelas `STRICT` na Migration `0001` (Fase 1) + `3` novas tabelas `STRICT` na Migration `0002` (Fase 2) + `2` novas tabelas `STRICT` na Migration `0003` (Fase 3) = **`24` tabelas `STRICT`** ao concluir a Migration `0003`.
 - **Transacionalidade:** Cada migração executa dentro de `BEGIN IMMEDIATE` com verificação obrigatória de `PRAGMA foreign_key_check` e `PRAGMA quick_check` antes do `COMMIT`.
 - **Estritamente aditiva e não-destrutiva:** Migrações jamais descartam ou recriam tabelas, dados, índices, constraints ou triggers existentes (`trg_trophies_immutable_origin`, `trg_trophy_unlocks_immutable_origin`).
-- **Nota crítica sobre `game_versions`:** A tabela `game_versions` **já existe como Tabela #8 da Migration `0001`** (já referenciada por `game_sessions.game_version_id` e gravada em produção pela Fase 1). Portanto, a Migration `0002` **não recria** `game_versions` (o que quebraria upgrades `v1 → v2` com `table game_versions already exists`); ela preserva `game_versions` integralmente e adiciona apenas índices não-destrutivos (`CREATE INDEX IF NOT EXISTS`) para acelerar deduplicação do scanner e consultas por versão.
+- **Nota crítica sobre `game_versions`:** A tabela `game_versions` **já existe como Tabela #8 da Migration `0001`** (já referenciada por `game_sessions.game_version_id` e gravada em produção pela Fase 1). Portanto, as Migrations `0002` e `0003` **não recriam** `game_versions`; elas preservam integralmente os dados existentes e aplicam apenas índices (`0002`) e colunas aditivas com valor padrão/nulo (`0003`).
 - **Proteção contra downgrade/versão futura:** Se `PRAGMA user_version > LATEST_SCHEMA_VERSION`, a abertura do banco **aborta com erro explícito sem modificar o arquivo**.
-- **Validação obrigatória de upgrade:** Toda nova migração possui teste de integração real migrando uma cópia populada do schema anterior (`v1 → v2`).
+- **Validação obrigatória de upgrade:** Toda nova migração possui testes de integração reais migrando cópias populadas dos schemas anteriores (`v1 → v2`, `v1 → v3` e `v2 → v3`).
 
 ---
 
@@ -51,7 +51,7 @@ PRAGMA temp_store = MEMORY;
 
 ---
 
-## Schema Definitivo — Migration `0002_console_environments.sql` (Fase 2 — Planejada, `user_version = 2`)
+## Schema Definitivo — Migration `0002_console_environments.sql` (Fase 2 — Implementada, `user_version = 2`)
 
 A Migration `0002` é **100% aditiva e não-destrutiva**: cria **3 novas tabelas `STRICT` (#20–#22)** e adiciona **índices de performance não-destrutivos** nas novas tabelas e nas tabelas existentes `game_versions` (#8) e `game_sessions` (#9).
 
@@ -135,10 +135,100 @@ CREATE INDEX IF NOT EXISTS idx_game_sessions_game_profile
     ON game_sessions(game_id, profile_id, started_at DESC);
 ```
 
-### Relacionamentos Verificados entre Entidades
+### Relacionamentos Verificados entre Entidades (Migration 0002)
 - **`games` (1) → `game_versions` (N):** `game_versions.game_id REFERENCES games(id) ON DELETE CASCADE`. Cada jogo canônico (`UNIQUE(console_id, canonical_key)`) pode possuir múltiplas edições/regiões/seriais/caminhos em `game_versions` (`UNIQUE(game_id, region, version_label, file_path)`).
 - **`game_sessions` (N) → `game_versions` (0..1):** `game_sessions.game_version_id REFERENCES game_versions(id) ON DELETE SET NULL`, preservando histórico de playtime caso uma versão local seja removida.
 - **`consoles` (1) → `emulators` (N) + `console_runtime_verifications` (N):** `console_runtime_verifications` referencia tanto `consoles(id)` quanto `emulators(id)` (`ON DELETE CASCADE`), permitindo que emuladores multi-console (ex.: Dolphin para Wii e GameCube) mantenham verificações independentes por console. O par `(game_id, scope_key)` com `CHECK` garante unicidade real no SQLite (evitando o comportamento `NULL != NULL` em `UNIQUE`) tanto para verificações de console quanto para `per_game_compatibility` por título.
+
+---
+
+## Schema Definitivo — Migration `0003_console_profiles_and_runtime.sql` (Fase 3 — Planejada, `user_version = 3`)
+
+A Migration `0003` é **100% aditiva e não-destrutiva**: cria **2 novas tabelas `STRICT` (#23–#24)** — separando estritamente a **identidade do console** (`console_profiles`) da **identidade de usuários locais reais do console** (`console_local_users`) — e adiciona colunas e índices não-destrutivos em `game_versions` (#8), `game_sessions` (#9) e `trophy_unlocks` (#12).
+
+```sql
+-- Universal Console Hub 3.0 — Real Console Profiles & Multi-User Readiness (Migration 0003)
+-- Strictly additive & non-destructive over Migration 0002 (22 -> 24 STRICT tables).
+
+-- Table #23: Persistent Console Profile Snapshot (Console identity, NEVER player identity)
+CREATE TABLE console_profiles (
+    id TEXT PRIMARY KEY NOT NULL,
+    console_id TEXT NOT NULL UNIQUE REFERENCES consoles(id) ON DELETE CASCADE,
+    emulator_id TEXT REFERENCES emulators(id) ON DELETE SET NULL,
+    emulator_status TEXT NOT NULL DEFAULT 'unconfigured' CHECK (emulator_status IN (
+        'unconfigured',
+        'available',
+        'missing_on_disk'
+    )),
+    detected_emulator_version TEXT,
+    detected_firmware_version TEXT,
+    emulator_root_dir TEXT,
+    native_save_count INTEGER NOT NULL DEFAULT 0 CHECK (native_save_count >= 0),
+    native_trophy_dir_present INTEGER NOT NULL DEFAULT 0 CHECK (native_trophy_dir_present IN (0, 1)),
+    trophy_sync_readiness TEXT NOT NULL DEFAULT 'unavailable' CHECK (trophy_sync_readiness IN (
+        'unavailable',
+        'phase4_planned',
+        'ready'
+    )),
+    native_metadata_json TEXT NOT NULL DEFAULT '{}',
+    sync_status TEXT NOT NULL DEFAULT 'never_synced' CHECK (sync_status IN (
+        'never_synced',
+        'synced',
+        'partial',
+        'error'
+    )),
+    sync_diagnostics TEXT NOT NULL DEFAULT '',
+    last_synced_at TEXT CHECK (last_synced_at IS NULL OR last_synced_at LIKE '____-__-__T__:__:__%Z'),
+    updated_at TEXT NOT NULL CHECK (updated_at LIKE '____-__-__T__:__:__%Z')
+) STRICT;
+
+-- Table #24: Real Local Console Users (only populated when the platform actually exposes local users, e.g. RPCS3 dev_hdd0/home/<id>/localusername)
+CREATE TABLE console_local_users (
+    id TEXT PRIMARY KEY NOT NULL,
+    console_id TEXT NOT NULL REFERENCES consoles(id) ON DELETE CASCADE,
+    native_user_key TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    source_path TEXT NOT NULL,
+    availability_status TEXT NOT NULL DEFAULT 'available' CHECK (availability_status IN (
+        'available',
+        'missing_on_disk'
+    )),
+    linked_profile_id TEXT REFERENCES profiles(id) ON DELETE SET NULL,
+    first_detected_at TEXT NOT NULL CHECK (first_detected_at LIKE '____-__-__T__:__:__%Z'),
+    last_seen_at TEXT NOT NULL CHECK (last_seen_at LIKE '____-__-__T__:__:__%Z'),
+    UNIQUE(console_id, native_user_key)
+) STRICT;
+
+-- Additive columns on existing tables (preserving 100% of existing rows, constraints and triggers)
+ALTER TABLE game_versions
+    ADD COLUMN availability_status TEXT NOT NULL DEFAULT 'available'
+    CHECK (availability_status IN ('available', 'missing_on_disk'));
+
+ALTER TABLE game_versions
+    ADD COLUMN last_verified_at TEXT
+    CHECK (last_verified_at IS NULL OR last_verified_at LIKE '____-__-__T__:__:__%Z');
+
+ALTER TABLE game_sessions
+    ADD COLUMN console_local_user_id TEXT REFERENCES console_local_users(id) ON DELETE SET NULL;
+
+ALTER TABLE trophy_unlocks
+    ADD COLUMN console_local_user_id TEXT REFERENCES console_local_users(id) ON DELETE SET NULL;
+
+-- Additive performance indexes
+CREATE INDEX IF NOT EXISTS idx_console_local_users_console
+    ON console_local_users(console_id);
+CREATE INDEX IF NOT EXISTS idx_game_versions_availability
+    ON game_versions(game_id, availability_status);
+CREATE INDEX IF NOT EXISTS idx_game_sessions_local_user
+    ON game_sessions(console_local_user_id) WHERE console_local_user_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_trophy_unlocks_local_user
+    ON trophy_unlocks(console_local_user_id) WHERE console_local_user_id IS NOT NULL;
+```
+
+### Garantias da Migration `0003`
+- **Separação Console vs. Jogador:** `console_profiles` (#23) nunca mistura nome de jogador com identidade de hardware/emulador; `console_local_users` (#24) suporta `0..N` usuários locais reais por console (nunca inventando registros quando a plataforma não fornece usuários).
+- **Preservação de Histórico:** `availability_status = 'missing_on_disk'` em `game_versions` e `console_local_users` + `emulator_status = 'missing_on_disk'` em `console_profiles` garantem que nenhuma sessão, estatística ou jogo histórico seja apagado quando arquivos forem movidos ou removidos.
+- **Prontidão para Conquistas Completas (Fase 4):** `trophies` (#11) já armazena `external_trophy_id`, `name`, `description`, `icon_path`, `category`, `rarity_percent` e `origin` (imutável); `trophy_unlocks` (#12) já armazena `unlocked_at`, `synced_at`, `origin` (imutável) e passa a aceitar `console_local_user_id` opcional para atribuição futura por usuário local do console na Fase 4.
 
 ---
 
