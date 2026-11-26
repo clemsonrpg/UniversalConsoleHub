@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::adapters::registry::AdapterRegistry;
 use crate::domain::console::ConsoleRecord;
+use crate::domain::console_profile::SyncTrigger;
 use crate::domain::emulator::{
     EmulatorInstallation, EmulatorRecord, FirmwarePackageReport, SystemBootReadiness,
 };
@@ -19,6 +20,7 @@ use crate::infrastructure::system::process_manager::ProcessManager;
 use crate::infrastructure::system::security::SecurityManager;
 
 use super::backup_service::BackupService;
+use super::console_profile_sync_service::ConsoleProfileSyncService;
 use super::environment_service::{ConsoleEnvironmentDto, EnvironmentService};
 use super::scanner_service::ScannerService;
 use super::session_service::SessionService;
@@ -101,6 +103,7 @@ pub struct AppServices {
     pub backup_dir: PathBuf,
     pub cover_cache_dir: PathBuf,
     environment: EnvironmentService,
+    console_profile_sync: ConsoleProfileSyncService,
     scanner: ScannerService,
     sessions: SessionService,
     statistics: StatisticsService,
@@ -125,6 +128,8 @@ impl AppServices {
         cover_cache_dir: PathBuf,
     ) -> Self {
         let environment = EnvironmentService::new(db.clone(), cover_cache_dir.clone());
+        let console_profile_sync =
+            ConsoleProfileSyncService::new(db.clone(), cover_cache_dir.clone());
         let scanner = ScannerService::new(db.clone());
         let sessions = SessionService::new(db.clone());
         let statistics = StatisticsService::new(db.clone());
@@ -136,6 +141,7 @@ impl AppServices {
             backup_dir,
             cover_cache_dir,
             environment,
+            console_profile_sync,
             scanner,
             sessions,
             statistics,
@@ -145,6 +151,10 @@ impl AppServices {
 
     pub fn environment_service(&self) -> &EnvironmentService {
         &self.environment
+    }
+
+    pub fn console_profile_sync_service(&self) -> &ConsoleProfileSyncService {
+        &self.console_profile_sync
     }
 
     pub fn scanner_service(&self) -> &ScannerService {
@@ -304,8 +314,14 @@ impl AppServices {
             None
         };
 
-        self.repos
-            .update_emulator_executable(slug, trimmed, detected_version.as_deref())
+        let record =
+            self.repos
+                .update_emulator_executable(slug, trimmed, detected_version.as_deref())?;
+        // Automatically synchronize real console profile after emulator configuration
+        let _ = self
+            .console_profile_sync
+            .sync_console_profile(&record.console_slug, SyncTrigger::EmulatorConfigured);
+        Ok(record)
     }
 
     pub fn inspect_rpcs3(&self) -> Result<Rpcs3InspectionDto, DomainError> {
@@ -387,10 +403,10 @@ impl AppServices {
             ));
         }
 
-        if let Some(adapter) = self.adapters.get(emulator_slug) {
+        let record = if let Some(adapter) = self.adapters.get(emulator_slug) {
             let report = adapter.validate_firmware_package(Path::new(trimmed))?;
             let notes = report.notes.join(" ");
-            return self.repos.upsert_firmware_record(
+            self.repos.upsert_firmware_record(
                 console_slug,
                 emulator_slug,
                 "system_firmware_package",
@@ -399,21 +415,25 @@ impl AppServices {
                 &report.sha256,
                 &report.validation_status,
                 &notes,
-            );
-        }
-
-        let valid = SecurityManager::validate_existing_file(Path::new(trimmed))?;
-        let (sha256, size_bytes) = SecurityManager::compute_sha256_streaming(&valid)?;
-        self.repos.upsert_firmware_record(
-            console_slug,
-            emulator_slug,
-            "user_system_file",
-            &valid.to_string_lossy(),
-            size_bytes,
-            &sha256,
-            "file_hash_recorded_phase_1",
-            "Hash SHA-256 calculado localmente sem armazenar nem distribuir o arquivo proprietário.",
-        )
+            )?
+        } else {
+            let valid = SecurityManager::validate_existing_file(Path::new(trimmed))?;
+            let (sha256, size_bytes) = SecurityManager::compute_sha256_streaming(&valid)?;
+            self.repos.upsert_firmware_record(
+                console_slug,
+                emulator_slug,
+                "user_system_file",
+                &valid.to_string_lossy(),
+                size_bytes,
+                &sha256,
+                "file_hash_recorded_phase_1",
+                "Hash SHA-256 calculado localmente sem armazenar nem distribuir o arquivo proprietário.",
+            )?
+        };
+        let _ = self
+            .console_profile_sync
+            .sync_console_profile(console_slug, SyncTrigger::EmulatorConfigured);
+        Ok(record)
     }
 
     pub fn update_active_profile(
