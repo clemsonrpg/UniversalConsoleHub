@@ -1,4 +1,5 @@
 pub mod console;
+pub mod console_profile;
 pub mod emulator;
 pub mod environment;
 pub mod error;

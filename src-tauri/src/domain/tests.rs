@@ -4,6 +4,9 @@ use super::console::{
     CapabilityState, ConsoleCapabilities, FeatureAvailability, FeatureCapability, FeatureKey,
     VerificationLevel,
 };
+use super::console_profile::{
+    AvailabilityStatus, DataOrigin, EmulatorStatus, ProfileField, SyncTrigger, TrophySyncReadiness,
+};
 use super::emulator::{LaunchCommand, SystemBootReadiness};
 use super::environment::{
     ConsoleEnvironmentMode, RuntimeVerificationFeature, RuntimeVerificationRecord,
@@ -12,7 +15,10 @@ use super::environment::{
 use super::error::DomainError;
 use super::player::{normalize_canonical_key, validate_utc_timestamp};
 use super::scanner::ScanProgressEvent;
-use super::session::{compute_elapsed_seconds_utc, EXIT_STATUS_RECOVERED_AFTER_CRASH};
+use super::session::{
+    compute_elapsed_seconds_utc, ActiveSessionPhase, LaunchTarget,
+    EXIT_STATUS_RECOVERED_AFTER_CRASH,
+};
 use super::trophy::{ensure_immutable_origin, TrophyOrigin};
 
 #[test]
@@ -264,4 +270,71 @@ fn session_elapsed_calculation_uses_strict_utc_bounds_and_never_negative() {
     );
     // Rejects non-UTC timestamps
     assert!(compute_elapsed_seconds_utc("2026-11-25 20:00:00", "2026-11-25T20:05:00Z").is_err());
+}
+
+#[test]
+fn console_profile_fields_enforce_explicit_data_origin_and_enum_roundtrips() {
+    let native_fw = ProfileField::native("4.91".to_string());
+    assert_eq!(native_fw.origin, DataOrigin::NativePlatform);
+    assert_eq!(native_fw.value.as_deref(), Some("4.91"));
+
+    let hub_hours = ProfileField::hub(3600i64);
+    assert_eq!(hub_hours.origin, DataOrigin::HubRecorded);
+    assert_eq!(hub_hours.value, Some(3600));
+
+    let missing_psn: ProfileField<String> =
+        ProfileField::unavailable("PSN oficial não é suportada.");
+    assert_eq!(missing_psn.origin, DataOrigin::Unavailable);
+    assert!(missing_psn.value.is_none());
+    assert!(missing_psn.notes.is_some());
+
+    let serialized = serde_json::to_value(&native_fw).expect("serialize ProfileField");
+    assert_eq!(serialized["origin"], "native_platform");
+    assert_eq!(serialized["value"], "4.91");
+
+    assert_eq!(
+        AvailabilityStatus::parse("missing_on_disk").unwrap(),
+        AvailabilityStatus::MissingOnDisk
+    );
+    assert_eq!(
+        EmulatorStatus::parse("unconfigured").unwrap(),
+        EmulatorStatus::Unconfigured
+    );
+    assert_eq!(
+        TrophySyncReadiness::parse("phase4_planned").unwrap(),
+        TrophySyncReadiness::Phase4Planned
+    );
+    assert_eq!(
+        SyncTrigger::parse("session_ended").unwrap(),
+        SyncTrigger::SessionEnded
+    );
+    assert!(AvailabilityStatus::parse("deleted").is_err());
+    assert!(TrophySyncReadiness::parse("faked").is_err());
+}
+
+#[test]
+fn live_session_state_machine_enforces_single_active_session_transitions() {
+    assert!(ActiveSessionPhase::Idle.can_transition_to(ActiveSessionPhase::Launching));
+    assert!(!ActiveSessionPhase::Idle.can_transition_to(ActiveSessionPhase::Running));
+    assert!(ActiveSessionPhase::Launching.can_transition_to(ActiveSessionPhase::Running));
+    assert!(ActiveSessionPhase::Launching.can_transition_to(ActiveSessionPhase::Idle));
+    assert!(!ActiveSessionPhase::Running.can_transition_to(ActiveSessionPhase::Launching));
+    assert!(ActiveSessionPhase::Running.can_transition_to(ActiveSessionPhase::Exiting));
+    assert!(ActiveSessionPhase::Exiting.can_transition_to(ActiveSessionPhase::Idle));
+
+    let sys_target = LaunchTarget::SystemBoot {
+        console_slug: "ps3".to_string(),
+    };
+    let sys_json = serde_json::to_value(&sys_target).expect("serialize SystemBoot");
+    assert_eq!(sys_json["kind"], "system_boot");
+    assert_eq!(sys_json["consoleSlug"], "ps3");
+
+    let game_target = LaunchTarget::DirectGameBoot {
+        console_slug: "ps3".to_string(),
+        game_id: "game-1".to_string(),
+        game_version_id: Some("gv-1".to_string()),
+    };
+    let game_json = serde_json::to_value(&game_target).expect("serialize DirectGameBoot");
+    assert_eq!(game_json["kind"], "direct_game_boot");
+    assert_eq!(game_json["gameId"], "game-1");
 }
