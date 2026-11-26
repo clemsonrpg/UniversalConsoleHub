@@ -1,6 +1,9 @@
 use std::collections::BTreeSet;
 
 use tempfile::TempDir;
+use universal_console_hub_lib::infrastructure::db::console_profile_repo::{
+    ConsoleProfileRepository, UpsertConsoleLocalUserInput, UpsertConsoleProfileInput,
+};
 use universal_console_hub_lib::infrastructure::db::manager::DatabaseManager;
 use universal_console_hub_lib::infrastructure::db::repositories::SqliteRepositories;
 
@@ -336,6 +339,8 @@ fn creates_valid_wal_backup_and_restores_mutated_database_completely() {
 
 const PHASE1_SCHEMA_SQL: &str =
     include_str!("../src/infrastructure/db/sql/0001_initial_schema.sql");
+const PHASE2_SCHEMA_SQL: &str =
+    include_str!("../src/infrastructure/db/sql/0002_console_environments.sql");
 
 fn build_populated_phase1_v1_db(path: &std::path::Path) {
     let conn = rusqlite::Connection::open(path).expect("create raw v1 sqlite db");
@@ -425,9 +430,9 @@ fn upgrades_real_phase1_v1_database_to_v2_preserving_all_records_constraints_and
         let version: i64 = conn
             .query_row("PRAGMA user_version;", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 2, "upgraded database must be at schema version 2");
+        assert_eq!(version, 3, "upgraded database must be at schema version 3");
 
-        // All 22 STRICT tables must exist (19 from v1 + 3 new from v2)
+        // All 24 STRICT tables must exist (19 from v1 + 3 from v2 + 2 from v3)
         let mut stmt = conn
             .prepare(
                 "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
@@ -438,13 +443,15 @@ fn upgrades_real_phase1_v1_database_to_v2_preserving_all_records_constraints_and
             .unwrap()
             .map(|r| r.unwrap())
             .collect();
-        assert_eq!(tables.len(), 22, "expected 22 total tables after v2 migration");
+        assert_eq!(tables.len(), 24, "expected 24 total tables after v3 migration");
         for new_table in [
             "console_scan_paths",
             "console_settings",
             "console_runtime_verifications",
+            "console_profiles",
+            "console_local_users",
         ] {
-            assert!(tables.contains(new_table), "missing v2 table {new_table}");
+            assert!(tables.contains(new_table), "missing migrated table {new_table}");
         }
 
         // Additive non-destructive indexes on new and existing tables must exist
@@ -465,9 +472,23 @@ fn upgrades_real_phase1_v1_database_to_v2_preserving_all_records_constraints_and
             "idx_game_versions_serial",
             "idx_game_sessions_open",
             "idx_game_sessions_game_profile",
+            "idx_console_local_users_console",
+            "idx_game_versions_availability",
+            "idx_game_sessions_local_user",
+            "idx_trophy_unlocks_local_user",
         ] {
             assert!(indexes.contains(expected_idx), "missing index {expected_idx}");
         }
+
+        // Verify v1 game_version received default availability_status = 'available'
+        let avail: String = conn
+            .query_row(
+                "SELECT availability_status FROM game_versions WHERE id = 'gv-1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(avail, "available");
 
         // Preserve all v1 records intact
         let profile_name: String = conn
@@ -607,9 +628,9 @@ fn inspects_and_live_restores_backup_with_open_wal_connection_including_v1_backu
         .expect("create valid v2 backup while WAL open");
 
     // 1. Inspect backup before restoring
-    let inspection = DatabaseManager::inspect_backup(&backup_v2_path).expect("inspect v2 backup");
+    let inspection = DatabaseManager::inspect_backup(&backup_v2_path).expect("inspect v3 backup");
     assert!(inspection.integrity_ok);
-    assert_eq!(inspection.schema_version, 2);
+    assert_eq!(inspection.schema_version, 3);
     assert_eq!(inspection.profiles_count, 1);
     assert_eq!(inspection.games_count, 1);
     assert!(inspection.size_bytes > 0);
@@ -679,7 +700,7 @@ fn inspects_and_live_restores_backup_with_open_wal_connection_including_v1_backu
         .restore_from_backup_live(&backup_v2_path, &safety_dir)
         .expect("live restore over open WAL connection on Windows");
     assert!(live_report.integrity_ok);
-    assert_eq!(live_report.schema_version, 2);
+    assert_eq!(live_report.schema_version, 3);
     assert!(
         live_report.pre_restore_snapshot_path.is_file(),
         "pre-restore snapshot must exist"
@@ -725,9 +746,9 @@ fn inspects_and_live_restores_backup_with_open_wal_connection_including_v1_backu
 
     let v1_restore = db
         .restore_from_backup_live(&v1_backup_path, &safety_dir)
-        .expect("live restore of v1 backup must auto-migrate to v2");
+        .expect("live restore of v1 backup must auto-migrate to v3");
     assert!(v1_restore.integrity_ok);
-    assert_eq!(v1_restore.schema_version, 2);
+    assert_eq!(v1_restore.schema_version, 3);
     assert_eq!(
         repos.get_active_profile().unwrap().display_name,
         "V1 Veteran"
@@ -736,10 +757,10 @@ fn inspects_and_live_restores_backup_with_open_wal_connection_including_v1_backu
         let version: i64 = conn
             .query_row("PRAGMA user_version;", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 2);
+        assert_eq!(version, 3);
         let new_table_exists: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'console_runtime_verifications'",
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'console_profiles'",
                 [],
                 |r| r.get(0),
             )
@@ -748,4 +769,188 @@ fn inspects_and_live_restores_backup_with_open_wal_connection_including_v1_backu
         Ok(())
     })
     .unwrap();
+}
+
+fn build_populated_phase2_v2_db(path: &std::path::Path) {
+    build_populated_phase1_v1_db(path);
+    let conn = rusqlite::Connection::open(path).expect("reopen v1 db to upgrade to raw v2");
+    conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+    conn.execute_batch(PHASE2_SCHEMA_SQL)
+        .expect("apply raw 0002 schema");
+    conn.pragma_update(None, "user_version", 2).unwrap();
+
+    let now = "2026-11-25T21:15:00Z";
+    conn.execute(
+        "INSERT INTO console_scan_paths (id, console_id, directory_path, recursive, enabled, last_scanned_at, created_at)
+         VALUES ('sp-1', 'console-ps3', 'D:\\Jogos\\PS3', 1, 1, ?1, ?1)",
+        rusqlite::params![now],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO console_settings (id, console_id, key, value, updated_at)
+         VALUES ('cs-1', 'console-ps3', 'fullscreen', 'true', ?1)",
+        rusqlite::params![now],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO game_sessions (id, profile_id, game_id, game_version_id, emulator_id, started_at, last_heartbeat_at, ended_at, duration_seconds, exit_status)
+         VALUES ('sess-v2', 'profile-default', 'game-1', 'gv-1', 'emu-rpcs3', ?1, ?1, ?1, 600, 'completed')",
+        rusqlite::params![now],
+    )
+    .unwrap();
+}
+
+#[test]
+fn upgrades_real_phase2_v2_database_to_v3_and_persists_console_profiles_and_local_users() {
+    let tmp = TempDir::new().expect("tempdir");
+    let db_path = tmp.path().join("upgrade_v2_to_v3.db");
+    build_populated_phase2_v2_db(&db_path);
+
+    let db = DatabaseManager::open(&db_path).expect("upgrade v2 db to v3");
+    assert!(db.verify_integrity().expect("integrity after v2->v3"));
+
+    let profile_repo = ConsoleProfileRepository::new(db.clone());
+
+    // 1. Persist console profile snapshot (strictly console identity, NOT player identity)
+    let saved_profile = profile_repo
+        .upsert_console_profile(&UpsertConsoleProfileInput {
+            console_slug: "ps3".to_string(),
+            emulator_slug: Some("rpcs3".to_string()),
+            emulator_status: "available".to_string(),
+            detected_emulator_version: Some("RPCS3 v0.0.34-17100".to_string()),
+            detected_firmware_version: Some("4.91".to_string()),
+            emulator_root_dir: Some(r"D:\Emulators\RPCS3".to_string()),
+            native_save_count: 4,
+            native_trophy_dir_present: true,
+            trophy_sync_readiness: "phase4_planned".to_string(),
+            native_metadata_json: r#"{"vshSelfPresent":true}"#.to_string(),
+            sync_status: "synced".to_string(),
+            sync_diagnostics: String::new(),
+            last_synced_at: Some("2026-11-25T21:20:00Z".to_string()),
+        })
+        .expect("upsert console profile");
+    assert_eq!(saved_profile.console_slug, "ps3");
+    assert_eq!(saved_profile.emulator_status, "available");
+    assert_eq!(
+        saved_profile.detected_firmware_version.as_deref(),
+        Some("4.91")
+    );
+    assert_eq!(saved_profile.trophy_sync_readiness, "phase4_planned");
+    assert_eq!(saved_profile.native_save_count, 4);
+    assert!(saved_profile.native_trophy_dir_present);
+
+    // 2. Persist multiple real local console users (Adjustment A)
+    let user1 = profile_repo
+        .upsert_local_user(&UpsertConsoleLocalUserInput {
+            console_slug: "ps3".to_string(),
+            native_user_key: "00000001".to_string(),
+            display_name: "ClemsonPS3".to_string(),
+            source_path: r"D:\Emulators\RPCS3\dev_hdd0\home\00000001".to_string(),
+            availability_status: "available".to_string(),
+            linked_profile_id: Some("profile-default".to_string()),
+        })
+        .expect("upsert local user 1");
+    let user2 = profile_repo
+        .upsert_local_user(&UpsertConsoleLocalUserInput {
+            console_slug: "ps3".to_string(),
+            native_user_key: "00000002".to_string(),
+            display_name: "GuestPS3".to_string(),
+            source_path: r"D:\Emulators\RPCS3\dev_hdd0\home\00000002".to_string(),
+            availability_status: "available".to_string(),
+            linked_profile_id: None,
+        })
+        .expect("upsert local user 2");
+
+    let users = profile_repo
+        .list_local_users("ps3")
+        .expect("list local users");
+    assert_eq!(users.len(), 2);
+    assert_eq!(users[0].native_user_key, "00000001");
+    assert_eq!(users[1].native_user_key, "00000002");
+
+    // Platforms without exposed local users must return empty list (never invent users)
+    assert!(profile_repo
+        .list_local_users("ps2")
+        .expect("list ps2 local users")
+        .is_empty());
+
+    // 3. Mark unseen user missing_on_disk without deleting it (Adjustment B)
+    let marked = profile_repo
+        .mark_unseen_local_users_missing("ps3", &["00000001".to_string()])
+        .expect("mark unseen users missing");
+    assert_eq!(marked, 1);
+    let users_after = profile_repo
+        .list_local_users("ps3")
+        .expect("list local users after mark");
+    assert_eq!(
+        users_after.len(),
+        2,
+        "missing user must be preserved, not deleted"
+    );
+    assert_eq!(users_after[0].availability_status, "available");
+    assert_eq!(users_after[1].availability_status, "missing_on_disk");
+
+    // 4. Mark game version missing_on_disk preserving existing v2 sessions (Adjustment B)
+    profile_repo
+        .update_game_version_availability("gv-1", "missing_on_disk", "2026-11-25T21:25:00Z")
+        .expect("mark version missing_on_disk");
+
+    // 5. Link optional console_local_user_id on game_sessions and trophy_unlocks (Adjustments A + C)
+    db.with_connection(|conn| {
+        conn.execute(
+            "UPDATE game_sessions SET console_local_user_id = ?1 WHERE id = 'sess-v2'",
+            rusqlite::params![user1.id],
+        )
+        .expect("link session to real console local user");
+
+        conn.execute(
+            "UPDATE trophy_unlocks SET console_local_user_id = ?1 WHERE id = 'tu-1'",
+            rusqlite::params![user1.id],
+        )
+        .expect("link trophy unlock to real console local user");
+
+        // Immutable origin trigger must STILL protect trophy_unlocks after v3 upgrade
+        assert!(
+            conn.execute(
+                "UPDATE trophy_unlocks SET origin = 'official' WHERE id = 'tu-1'",
+                [],
+            )
+            .is_err(),
+            "trg_trophy_unlocks_immutable_origin must survive v2->v3 upgrade"
+        );
+
+        let (avail, verified_at): (String, Option<String>) = conn
+            .query_row(
+                "SELECT availability_status, last_verified_at FROM game_versions WHERE id = 'gv-1'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(avail, "missing_on_disk");
+        assert_eq!(verified_at.as_deref(), Some("2026-11-25T21:25:00Z"));
+
+        // Existing v2 session and scan_path survived intact
+        let sess_duration: i64 = conn
+            .query_row(
+                "SELECT duration_seconds FROM game_sessions WHERE id = 'sess-v2'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(sess_duration, 600);
+
+        let scan_path_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM console_scan_paths WHERE id = 'sp-1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(scan_path_count, 1);
+
+        // Verify second user id was referenced cleanly
+        assert_ne!(user1.id, user2.id);
+        Ok(())
+    })
+    .expect("v2->v3 assertions");
 }

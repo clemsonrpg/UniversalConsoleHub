@@ -4,7 +4,8 @@ use crate::domain::error::DomainError;
 
 const MIGRATION_0001: &str = include_str!("sql/0001_initial_schema.sql");
 const MIGRATION_0002: &str = include_str!("sql/0002_console_environments.sql");
-pub const LATEST_SCHEMA_VERSION: i64 = 2;
+const MIGRATION_0003: &str = include_str!("sql/0003_console_profiles_and_runtime.sql");
+pub const LATEST_SCHEMA_VERSION: i64 = 3;
 
 fn run_transactional_migration(
     conn: &mut Connection,
@@ -74,6 +75,11 @@ pub fn apply_migrations(conn: &mut Connection) -> Result<i64, DomainError> {
 
     if current_version < 2 {
         run_transactional_migration(conn, 2, "migration 0002", MIGRATION_0002)?;
+        current_version = 2;
+    }
+
+    if current_version < 3 {
+        run_transactional_migration(conn, 3, "migration 0003", MIGRATION_0003)?;
     }
 
     conn.query_row("PRAGMA user_version;", [], |row| row.get(0))
