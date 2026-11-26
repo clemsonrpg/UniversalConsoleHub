@@ -1,23 +1,28 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::ipc::Channel;
-use tauri::State;
+use tauri::{AppHandle, Emitter, State};
 
 use crate::application::backup_service::BackupFileEntry;
+use crate::application::console_profile_sync_service::ConsoleProfileOverviewDto;
 use crate::application::environment_service::ConsoleEnvironmentDto;
 use crate::application::services::{
     ActivityEntryDto, AppServices, ConsoleDetailsDto, HubBootstrapDto, RegisterGameRequest,
     Rpcs3InspectionDto, UpdateProfileRequest,
 };
 use crate::domain::console::ConsoleRecord;
+use crate::domain::console_profile::{ConsoleSyncReport, SyncTrigger};
 use crate::domain::emulator::EmulatorRecord;
-use crate::domain::environment::{ConsoleScanPath, ConsoleSetting};
+use crate::domain::environment::{
+    ConsoleScanPath, ConsoleSetting, RuntimeVerificationFeature, RuntimeVerificationRecord,
+    RuntimeVerificationStatus,
+};
 use crate::domain::error::DomainError;
 use crate::domain::player::{GameRecord, PlayerProfile};
 use crate::domain::scanner::{ScanProgressEvent, ScanSummaryDto};
-use crate::domain::session::StatisticsOverview;
+use crate::domain::session::{ActiveSessionSnapshot, StatisticsOverview};
 use crate::domain::trophy::{AchievementProviderRecord, TrophyRecord};
 use crate::infrastructure::db::console_env_repo::{GameDetailsDto, UpdateGameMetadataInput};
 use crate::infrastructure::db::manager::{BackupInspectionReport, BackupReport, LiveRestoreReport};
@@ -176,11 +181,20 @@ pub fn add_console_scan_path(
     console_slug: String,
     directory_path: String,
     recursive: bool,
+    app: AppHandle,
     services: State<'_, AppServices>,
 ) -> Result<ConsoleScanPath, DomainError> {
-    services
-        .environment_service()
-        .add_scan_path(&console_slug, &directory_path, recursive)
+    let added =
+        services
+            .environment_service()
+            .add_scan_path(&console_slug, &directory_path, recursive)?;
+    if let Ok(report) = services
+        .console_profile_sync_service()
+        .sync_console_profile(&console_slug, SyncTrigger::DirectoryChanged)
+    {
+        let _ = app.emit("profile:synced", &report);
+    }
+    Ok(added)
 }
 
 #[tauri::command]
@@ -195,16 +209,28 @@ pub fn remove_console_scan_path(
 pub async fn scan_console_library(
     console_slug: String,
     on_progress: Channel<ScanProgressEvent>,
+    app: AppHandle,
     services: State<'_, AppServices>,
 ) -> Result<ScanSummaryDto, DomainError> {
     let scanner = services.scanner_service().clone();
-    tokio::task::spawn_blocking(move || {
-        scanner.scan_console(&console_slug, |evt| {
+    let sync = services.console_profile_sync_service().clone();
+    let slug_for_sync = console_slug.clone();
+    let (summary, sync_report) = tokio::task::spawn_blocking(move || {
+        let summary = scanner.scan_console(&console_slug, |evt| {
             let _ = on_progress.send(evt);
-        })
+        })?;
+        let report = sync
+            .sync_console_profile(&slug_for_sync, SyncTrigger::ScanCompleted)
+            .ok();
+        Ok::<_, DomainError>((summary, report))
     })
     .await
-    .map_err(|e| DomainError::Io(format!("scanner task failed to join: {e}")))?
+    .map_err(|e| DomainError::Io(format!("scanner task failed to join: {e}")))??;
+
+    if let Some(report) = sync_report {
+        let _ = app.emit("profile:synced", &report);
+    }
+    Ok(summary)
 }
 
 #[tauri::command]
@@ -289,4 +315,100 @@ pub fn restore_database_backup(
     services
         .backup_service()
         .restore_backup(Path::new(&backup_path))
+}
+
+// ===== Phase 3 Commands (7 new commands, total = 38) =====
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecordRuntimeVerificationRequest {
+    pub console_slug: String,
+    pub emulator_slug: String,
+    pub game_id: Option<String>,
+    pub feature_key: RuntimeVerificationFeature,
+    pub emulator_version: String,
+    pub status: RuntimeVerificationStatus,
+    pub evidence_notes: String,
+}
+
+#[tauri::command]
+pub fn get_console_profile(
+    console_slug: String,
+    services: State<'_, AppServices>,
+) -> Result<ConsoleProfileOverviewDto, DomainError> {
+    services
+        .console_profile_sync_service()
+        .get_console_profile_overview(&console_slug)
+}
+
+#[tauri::command]
+pub async fn sync_console_profile(
+    console_slug: String,
+    trigger: Option<String>,
+    app: AppHandle,
+    services: State<'_, AppServices>,
+) -> Result<ConsoleSyncReport, DomainError> {
+    let parsed_trigger = match trigger.as_deref() {
+        Some(raw) => SyncTrigger::parse(raw)?,
+        None => SyncTrigger::Manual,
+    };
+    let sync = services.console_profile_sync_service().clone();
+    let report = tokio::task::spawn_blocking(move || {
+        sync.sync_console_profile(&console_slug, parsed_trigger)
+    })
+    .await
+    .map_err(|e| DomainError::Io(format!("profile sync task failed to join: {e}")))??;
+    let _ = app.emit("profile:synced", &report);
+    Ok(report)
+}
+
+#[tauri::command]
+pub async fn launch_console_system(
+    console_slug: String,
+    services: State<'_, AppServices>,
+) -> Result<ActiveSessionSnapshot, DomainError> {
+    services
+        .live_session_orchestrator()
+        .launch_console_system(&console_slug)
+        .await
+}
+
+#[tauri::command]
+pub async fn launch_game(
+    game_id: String,
+    game_version_id: Option<String>,
+    services: State<'_, AppServices>,
+) -> Result<ActiveSessionSnapshot, DomainError> {
+    services
+        .live_session_orchestrator()
+        .launch_game(&game_id, game_version_id.as_deref())
+        .await
+}
+
+#[tauri::command]
+pub fn get_active_session(services: State<'_, AppServices>) -> ActiveSessionSnapshot {
+    services.live_session_orchestrator().get_active_session()
+}
+
+#[tauri::command]
+pub fn stop_active_session(services: State<'_, AppServices>) -> Result<bool, DomainError> {
+    services.live_session_orchestrator().stop_active_session()
+}
+
+#[tauri::command]
+pub fn record_runtime_verification(
+    request: RecordRuntimeVerificationRequest,
+    services: State<'_, AppServices>,
+) -> Result<RuntimeVerificationRecord, DomainError> {
+    services
+        .live_session_orchestrator()
+        .record_runtime_verification(
+            &request.console_slug,
+            &request.emulator_slug,
+            request.game_id.as_deref(),
+            request.feature_key,
+            &request.emulator_version,
+            request.status,
+            &request.evidence_notes,
+        )
 }

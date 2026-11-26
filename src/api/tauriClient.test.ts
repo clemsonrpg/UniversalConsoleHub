@@ -79,4 +79,49 @@ describe('tauriClient transport resolution and typed dispatch', () => {
       backupPath: 'D:\\backups\\snap.db',
     });
   });
+
+  it('dispatches Phase 3 console profile, sync, live launch, stop, and runtime verification commands', async () => {
+    const invokeMock = vi.fn().mockResolvedValue({ ok: true });
+    const client = new HubApiClient({ kind: 'injected_test', invoke: invokeMock });
+
+    await client.getConsoleProfile('ps3');
+    await client.syncConsoleProfile('ps3', 'manual');
+    await client.launchConsoleSystem('ps3');
+    await client.launchGame('game-1', 'gv-1');
+    await client.getActiveSession();
+    await client.stopActiveSession();
+    await client.recordRuntimeVerification({
+      consoleSlug: 'ps3',
+      emulatorSlug: 'rpcs3',
+      gameId: null,
+      featureKey: 'original_dashboard',
+      emulatorVersion: 'RPCS3 v0.0.34',
+      status: 'runtime_confirmed',
+      evidenceNotes: 'XMB booted and navigated on Windows 11.',
+    });
+
+    expect(invokeMock).toHaveBeenCalledWith('get_console_profile', { consoleSlug: 'ps3' });
+    expect(invokeMock).toHaveBeenCalledWith('sync_console_profile', {
+      consoleSlug: 'ps3',
+      trigger: 'manual',
+    });
+    expect(invokeMock).toHaveBeenCalledWith('launch_console_system', { consoleSlug: 'ps3' });
+    expect(invokeMock).toHaveBeenCalledWith('launch_game', {
+      gameId: 'game-1',
+      gameVersionId: 'gv-1',
+    });
+    expect(invokeMock).toHaveBeenCalledWith('get_active_session');
+    expect(invokeMock).toHaveBeenCalledWith('stop_active_session');
+    expect(invokeMock).toHaveBeenCalledWith('record_runtime_verification', {
+      request: {
+        consoleSlug: 'ps3',
+        emulatorSlug: 'rpcs3',
+        gameId: null,
+        featureKey: 'original_dashboard',
+        emulatorVersion: 'RPCS3 v0.0.34',
+        status: 'runtime_confirmed',
+        evidenceNotes: 'XMB booted and navigated on Windows 11.',
+      },
+    });
+  });
 });

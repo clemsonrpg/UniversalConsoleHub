@@ -1,13 +1,17 @@
 import { Channel, convertFileSrc, invoke } from '@tauri-apps/api/core';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type {
+  ActiveSessionSnapshot,
   ActivityEntryDto,
   BackupFileEntry,
   BackupInspectionReport,
   BackupReport,
   ConsoleDetailsDto,
   ConsoleEnvironmentDto,
+  ConsoleProfileOverviewDto,
   ConsoleScanPath,
   ConsoleSetting,
+  ConsoleSyncReport,
   EmulatorRecord,
   FirmwareRecordDto,
   GameDetailsDto,
@@ -15,11 +19,15 @@ import type {
   HubBootstrapDto,
   LiveRestoreReport,
   PlayerProfile,
+  RecordRuntimeVerificationRequest,
   RegisterGameRequest,
   Rpcs3InspectionDto,
+  RuntimeVerificationRecord,
   ScanProgressEvent,
   ScanSummaryDto,
+  SessionExitedPayload,
   StatisticsOverview,
+  SyncTrigger,
   UpdateGameMetadataRequest,
   UpdateProfileRequest,
 } from '../types/domain';
@@ -221,4 +229,93 @@ export class HubApiClient {
   restoreDatabaseBackup(backupPath: string): Promise<LiveRestoreReport> {
     return this.transport.invoke('restore_database_backup', { backupPath });
   }
+
+  // ===== Phase 3 IPC Client Methods (7 new commands) =====
+
+  getConsoleProfile(consoleSlug: string): Promise<ConsoleProfileOverviewDto> {
+    return this.transport.invoke('get_console_profile', { consoleSlug });
+  }
+
+  syncConsoleProfile(
+    consoleSlug: string,
+    trigger: SyncTrigger = 'manual'
+  ): Promise<ConsoleSyncReport> {
+    return this.transport.invoke('sync_console_profile', { consoleSlug, trigger });
+  }
+
+  launchConsoleSystem(consoleSlug: string): Promise<ActiveSessionSnapshot> {
+    return this.transport.invoke('launch_console_system', { consoleSlug });
+  }
+
+  launchGame(gameId: string, gameVersionId?: string | null): Promise<ActiveSessionSnapshot> {
+    return this.transport.invoke('launch_game', {
+      gameId,
+      gameVersionId: gameVersionId ?? null,
+    });
+  }
+
+  getActiveSession(): Promise<ActiveSessionSnapshot> {
+    return this.transport.invoke('get_active_session');
+  }
+
+  stopActiveSession(): Promise<boolean> {
+    return this.transport.invoke('stop_active_session');
+  }
+
+  recordRuntimeVerification(
+    request: RecordRuntimeVerificationRequest
+  ): Promise<RuntimeVerificationRecord> {
+    return this.transport.invoke('record_runtime_verification', { request });
+  }
+}
+
+export interface HubRuntimeEventHandlers {
+  onSessionStarted?: (snapshot: ActiveSessionSnapshot) => void;
+  onSessionHeartbeat?: (snapshot: ActiveSessionSnapshot) => void;
+  onSessionExited?: (payload: SessionExitedPayload) => void;
+  onProfileSynced?: (report: ConsoleSyncReport) => void;
+}
+
+export async function subscribeHubRuntimeEvents(
+  handlers: HubRuntimeEventHandlers
+): Promise<() => void> {
+  if (!isTauriDesktopRuntime()) {
+    return () => {};
+  }
+
+  const unlisteners: UnlistenFn[] = [];
+  if (handlers.onSessionStarted) {
+    unlisteners.push(
+      await listen<ActiveSessionSnapshot>('session:started', (evt) =>
+        handlers.onSessionStarted?.(evt.payload)
+      )
+    );
+  }
+  if (handlers.onSessionHeartbeat) {
+    unlisteners.push(
+      await listen<ActiveSessionSnapshot>('session:heartbeat', (evt) =>
+        handlers.onSessionHeartbeat?.(evt.payload)
+      )
+    );
+  }
+  if (handlers.onSessionExited) {
+    unlisteners.push(
+      await listen<SessionExitedPayload>('session:exited', (evt) =>
+        handlers.onSessionExited?.(evt.payload)
+      )
+    );
+  }
+  if (handlers.onProfileSynced) {
+    unlisteners.push(
+      await listen<ConsoleSyncReport>('profile:synced', (evt) =>
+        handlers.onProfileSynced?.(evt.payload)
+      )
+    );
+  }
+
+  return () => {
+    for (const unlisten of unlisteners) {
+      unlisten();
+    }
+  };
 }

@@ -4,13 +4,17 @@ pub mod domain;
 pub mod infrastructure;
 pub mod ipc;
 
+use std::sync::Arc;
+
 use tauri::Manager;
 use tracing::{info, warn};
 
 use crate::adapters::registry::AdapterRegistry;
+use crate::application::live_session_orchestrator::TauriSessionEventSink;
 use crate::application::services::AppServices;
 use crate::infrastructure::db::manager::DatabaseManager;
 use crate::infrastructure::system::logging::init_logging;
+use crate::infrastructure::system::window_manager::TauriWindowManager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -34,6 +38,10 @@ pub fn run() {
                 AdapterRegistry::with_phase_one_adapters(),
                 backup_dir,
                 cover_cache_dir,
+            );
+            services.live_session_orchestrator().attach_runtime_hooks(
+                Arc::new(TauriWindowManager::new(app.handle().clone())),
+                Arc::new(TauriSessionEventSink::new(app.handle().clone())),
             );
 
             match services.session_service().reconcile_orphaned_sessions() {
@@ -87,6 +95,14 @@ pub fn run() {
             ipc::commands::list_database_backups,
             ipc::commands::inspect_database_backup,
             ipc::commands::restore_database_backup,
+            // Phase 3 commands (7 — total 38)
+            ipc::commands::get_console_profile,
+            ipc::commands::sync_console_profile,
+            ipc::commands::launch_console_system,
+            ipc::commands::launch_game,
+            ipc::commands::get_active_session,
+            ipc::commands::stop_active_session,
+            ipc::commands::record_runtime_verification,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Universal Console Hub");

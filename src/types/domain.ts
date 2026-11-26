@@ -453,3 +453,149 @@ export interface LiveRestoreReport {
   schemaVersion: number;
   restoredAt: string;
 }
+
+// ===== Phase 3 Domain Contracts (Real Console Profiles & Live PS3 Sessions) =====
+
+export type DataOrigin = 'native_platform' | 'hub_recorded' | 'unavailable';
+
+export interface ProfileField<T> {
+  value: T | null;
+  origin: DataOrigin;
+  notes: string | null;
+}
+
+export type AvailabilityStatus = 'available' | 'missing_on_disk';
+
+export type EmulatorStatus = 'unconfigured' | 'available' | 'missing_on_disk';
+
+export type TrophySyncReadiness = 'unavailable' | 'phase4_planned' | 'ready';
+
+export type SyncTrigger =
+  | 'manual'
+  | 'directory_changed'
+  | 'scan_completed'
+  | 'emulator_configured'
+  | 'pre_launch'
+  | 'session_ended';
+
+export interface ConsoleProfileRecord {
+  id: string;
+  consoleId: string;
+  consoleSlug: string;
+  emulatorId: string | null;
+  emulatorSlug: string | null;
+  emulatorStatus: EmulatorStatus;
+  detectedEmulatorVersion: string | null;
+  detectedFirmwareVersion: string | null;
+  emulatorRootDir: string | null;
+  nativeSaveCount: number;
+  nativeTrophyDirPresent: boolean;
+  trophySyncReadiness: TrophySyncReadiness;
+  nativeMetadataJson: string;
+  syncStatus: 'never_synced' | 'synced' | 'partial' | 'error';
+  syncDiagnostics: string;
+  lastSyncedAt: string | null;
+  updatedAt: string;
+}
+
+export interface ConsoleLocalUserRecord {
+  id: string;
+  consoleId: string;
+  consoleSlug: string;
+  nativeUserKey: string;
+  displayName: string;
+  sourcePath: string;
+  availabilityStatus: AvailabilityStatus;
+  linkedProfileId: string | null;
+  firstDetectedAt: string;
+  lastSeenAt: string;
+}
+
+export interface ConsoleHubProfileStatsDto {
+  totalPlaytimeSeconds: number;
+  totalSessions: number;
+  gamesTotal: number;
+  gamesAvailable: number;
+  gamesMissingOnDisk: number;
+  mostPlayed: TopGameStat[];
+  recentlyPlayed: GameRecord[];
+}
+
+export interface ConsoleProfileOverviewDto {
+  consoleSlug: string;
+  consoleName: string;
+  environmentMode: ConsoleEnvironmentMode;
+  profile: ConsoleProfileRecord | null;
+  localUsers: ConsoleLocalUserRecord[];
+  emulatorStatus: ProfileField<EmulatorStatus>;
+  emulatorVersion: ProfileField<string>;
+  firmwareVersion: ProfileField<string>;
+  emulatorRootDir: ProfileField<string>;
+  nativeSaveCount: ProfileField<number>;
+  trophyReadiness: ProfileField<TrophySyncReadiness>;
+  hubStats: ConsoleHubProfileStatsDto;
+  recentSessions: GameSessionRecord[];
+}
+
+export interface ConsoleSyncReport {
+  consoleSlug: string;
+  trigger: SyncTrigger;
+  syncStatus: string;
+  emulatorStatus: EmulatorStatus;
+  localUsersDetected: number;
+  localUsersMarkedMissing: number;
+  gamesDiscovered: number;
+  versionsAvailable: number;
+  versionsMarkedMissing: number;
+  coversImported: number;
+  diagnostics: string[];
+  syncedAt: string;
+}
+
+export type ActiveSessionPhase = 'idle' | 'launching' | 'running' | 'exiting';
+
+export type LaunchTarget =
+  | { kind: 'system_boot'; consoleSlug: string }
+  | {
+      kind: 'direct_game_boot';
+      consoleSlug: string;
+      gameId: string;
+      gameVersionId: string | null;
+    };
+
+export interface ActiveSessionSnapshot {
+  phase: ActiveSessionPhase;
+  sessionId: string | null;
+  target: LaunchTarget | null;
+  consoleSlug: string | null;
+  gameId: string | null;
+  gameTitle: string | null;
+  emulatorSlug: string | null;
+  pid: number | null;
+  startedAt: string | null;
+  lastHeartbeatAt: string | null;
+  elapsedSeconds: number;
+}
+
+export interface SessionExitedPayload {
+  sessionId: string | null;
+  consoleSlug: string;
+  gameId: string | null;
+  gameTitle: string | null;
+  emulatorSlug: string;
+  exitCode: number | null;
+  exitStatus: string;
+  durationSeconds: number;
+  diagnostic: string;
+  endedAt: string;
+}
+
+export interface RecordRuntimeVerificationRequest {
+  consoleSlug: string;
+  emulatorSlug: string;
+  gameId: string | null;
+  featureKey: RuntimeVerificationFeature;
+  emulatorVersion: string;
+  status: RuntimeVerificationStatus;
+  evidenceNotes: string;
+}
