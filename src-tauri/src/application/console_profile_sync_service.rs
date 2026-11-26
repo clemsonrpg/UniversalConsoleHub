@@ -404,7 +404,14 @@ impl ConsoleProfileSyncService {
                         "Integração real de troféus planejada para a Fase 4 (diretório local ainda não detectado)."
                     },
                 ),
-                TrophySyncReadiness::Ready => ProfileField::native(TrophySyncReadiness::Ready),
+                TrophySyncReadiness::Ready => ProfileField::native_with_note(
+                    TrophySyncReadiness::Ready,
+                    if rec.native_trophy_dir_present {
+                        "Leitor local RPCS3 pronto (TROPCONF.SFM / TROPUSR.DAT somente leitura)."
+                    } else {
+                        "Leitor local RPCS3 ativo; nenhum conjunto de troféus detectado ainda no disco."
+                    },
+                ),
             };
             (
                 emu_status_field,

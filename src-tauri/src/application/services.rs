@@ -28,6 +28,7 @@ use super::live_session_orchestrator::LiveSessionOrchestrator;
 use super::scanner_service::ScannerService;
 use super::session_service::SessionService;
 use super::statistics_service::StatisticsService;
+use super::trophy_sync_service::TrophySyncService;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -107,6 +108,7 @@ pub struct AppServices {
     pub cover_cache_dir: PathBuf,
     environment: EnvironmentService,
     console_profile_sync: ConsoleProfileSyncService,
+    trophy_sync: TrophySyncService,
     live_sessions: LiveSessionOrchestrator,
     scanner: ScannerService,
     sessions: SessionService,
@@ -134,6 +136,7 @@ impl AppServices {
         let environment = EnvironmentService::new(db.clone(), cover_cache_dir.clone());
         let console_profile_sync =
             ConsoleProfileSyncService::new(db.clone(), cover_cache_dir.clone());
+        let trophy_sync = TrophySyncService::new(db.clone(), cover_cache_dir.clone());
         let live_sessions =
             LiveSessionOrchestrator::new(db.clone(), adapters.clone(), cover_cache_dir.clone());
         let scanner = ScannerService::new(db.clone());
@@ -148,6 +151,7 @@ impl AppServices {
             cover_cache_dir,
             environment,
             console_profile_sync,
+            trophy_sync,
             live_sessions,
             scanner,
             sessions,
@@ -162,6 +166,10 @@ impl AppServices {
 
     pub fn console_profile_sync_service(&self) -> &ConsoleProfileSyncService {
         &self.console_profile_sync
+    }
+
+    pub fn trophy_sync_service(&self) -> &TrophySyncService {
+        &self.trophy_sync
     }
 
     pub fn live_session_orchestrator(&self) -> &LiveSessionOrchestrator {

@@ -6,3 +6,4 @@ pub mod scanner_service;
 pub mod services;
 pub mod session_service;
 pub mod statistics_service;
+pub mod trophy_sync_service;

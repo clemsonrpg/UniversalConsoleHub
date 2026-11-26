@@ -188,7 +188,7 @@ fn syncs_ps3_profile_idempotently_caches_native_icons_and_preserves_history_when
             .as_ref()
             .expect("persisted profile")
             .trophy_sync_readiness,
-        TrophySyncReadiness::Phase4Planned.as_str()
+        TrophySyncReadiness::Ready.as_str()
     );
 
     // Native ICON0.PNG must have been auto-cached into authorized cover_cache_dir

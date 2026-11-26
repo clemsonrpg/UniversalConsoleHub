@@ -328,7 +328,7 @@ impl ConsoleProfileProvider for Ps3ProfileProvider {
             native_game_scan_dirs,
             native_save_count,
             native_trophy_dir_present,
-            trophy_sync_readiness: TrophySyncReadiness::Phase4Planned,
+            trophy_sync_readiness: TrophySyncReadiness::Ready,
             native_metadata_json: metadata.to_string(),
             diagnostics,
         }

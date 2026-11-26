@@ -120,10 +120,7 @@ fn reads_real_synthetic_rpcs3_tree_with_unicode_firmware_multiple_users_saves_an
     assert!(snap.vsh_or_system_boot_ready);
     assert_eq!(snap.native_save_count, 3);
     assert!(snap.native_trophy_dir_present);
-    assert_eq!(
-        snap.trophy_sync_readiness,
-        TrophySyncReadiness::Phase4Planned
-    );
+    assert_eq!(snap.trophy_sync_readiness, TrophySyncReadiness::Ready);
     assert_eq!(snap.local_users.len(), 2);
     assert_eq!(snap.local_users[0].native_user_key, "00000001");
     assert_eq!(snap.local_users[0].display_name, "ClemsonPS3");

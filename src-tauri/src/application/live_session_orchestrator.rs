@@ -17,6 +17,7 @@ use crate::domain::session::{
     compute_elapsed_seconds_utc, ActiveSessionPhase, ActiveSessionSnapshot, LaunchTarget,
     EXIT_STATUS_CLEAN, EXIT_STATUS_NON_ZERO, EXIT_STATUS_USER_STOPPED,
 };
+use crate::domain::trophy::{NewlyUnlockedTrophy, TrophySyncReport};
 use crate::infrastructure::db::console_env_repo::{ConsoleEnvRepository, GameDetailsRepository};
 use crate::infrastructure::db::console_profile_repo::ConsoleProfileRepository;
 use crate::infrastructure::db::manager::DatabaseManager;
@@ -26,6 +27,7 @@ use crate::infrastructure::system::window_manager::{NoopWindowHook, WindowLifecy
 
 use super::console_profile_sync_service::ConsoleProfileSyncService;
 use super::session_service::SessionService;
+use super::trophy_sync_service::TrophySyncService;
 
 pub const DEFAULT_HEARTBEAT_INTERVAL_SECS: u64 = 60;
 
@@ -49,6 +51,8 @@ pub trait SessionEventSink: Send + Sync {
     fn on_session_heartbeat(&self, snapshot: &ActiveSessionSnapshot);
     fn on_session_exited(&self, payload: &SessionExitedPayload);
     fn on_profile_synced(&self, report: &ConsoleSyncReport);
+    fn on_trophies_synced(&self, _report: &TrophySyncReport) {}
+    fn on_trophies_unlocked(&self, _unlocked: &[NewlyUnlockedTrophy]) {}
 }
 
 #[derive(Debug, Default, Clone)]
@@ -88,6 +92,16 @@ impl SessionEventSink for TauriSessionEventSink {
     fn on_profile_synced(&self, report: &ConsoleSyncReport) {
         let _ = self.app_handle.emit("profile:synced", report);
     }
+
+    fn on_trophies_synced(&self, report: &TrophySyncReport) {
+        let _ = self.app_handle.emit("trophies:synced", report);
+    }
+
+    fn on_trophies_unlocked(&self, unlocked: &[NewlyUnlockedTrophy]) {
+        if !unlocked.is_empty() {
+            let _ = self.app_handle.emit("trophies:unlocked", unlocked);
+        }
+    }
 }
 
 struct LiveSessionRuntime {
@@ -108,6 +122,7 @@ pub struct LiveSessionOrchestrator {
     profile_repo: ConsoleProfileRepository,
     session_service: SessionService,
     profile_sync: ConsoleProfileSyncService,
+    trophy_sync: TrophySyncService,
     adapters: AdapterRegistry,
     heartbeat_interval: Duration,
     runtime: Arc<Mutex<LiveSessionRuntime>>,
@@ -141,7 +156,8 @@ impl LiveSessionOrchestrator {
             details_repo: GameDetailsRepository::new(db.clone()),
             profile_repo: ConsoleProfileRepository::new(db.clone()),
             session_service: SessionService::new(db.clone()),
-            profile_sync: ConsoleProfileSyncService::new(db, cover_cache_dir),
+            profile_sync: ConsoleProfileSyncService::new(db.clone(), cover_cache_dir.clone()),
+            trophy_sync: TrophySyncService::new(db, cover_cache_dir),
             adapters,
             heartbeat_interval,
             runtime: Arc::new(Mutex::new(LiveSessionRuntime {
@@ -750,10 +766,11 @@ impl LiveSessionOrchestrator {
             );
         }
 
-        // Automatically re-synchronize console profile after session end
+        // Automatically re-synchronize console profile and local emulator trophies after session end
         let post_sync = self
             .profile_sync
             .sync_console_profile(&console_slug, SyncTrigger::SessionEnded);
+        let post_trophies = self.trophy_sync.sync_console_trophies(&console_slug);
 
         self.reset_to_idle();
 
@@ -772,6 +789,12 @@ impl LiveSessionOrchestrator {
 
         if let Ok(report) = post_sync {
             event_sink.on_profile_synced(&report);
+        }
+        if let Ok(trophy_report) = post_trophies {
+            event_sink.on_trophies_synced(&trophy_report);
+            if !trophy_report.newly_unlocked.is_empty() {
+                event_sink.on_trophies_unlocked(&trophy_report.newly_unlocked);
+            }
         }
     }
 }
