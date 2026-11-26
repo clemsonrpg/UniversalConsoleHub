@@ -43,6 +43,9 @@ pub fn run() {
                 Arc::new(TauriWindowManager::new(app.handle().clone())),
                 Arc::new(TauriSessionEventSink::new(app.handle().clone())),
             );
+            services
+                .gamepad_monitor()
+                .start_with_tauri(app.handle().clone());
 
             match services.session_service().reconcile_orphaned_sessions() {
                 Ok(report) if report.recovered_count > 0 => {
@@ -107,6 +110,11 @@ pub fn run() {
             ipc::commands::sync_console_trophies,
             ipc::commands::get_trophy_center_overview,
             ipc::commands::list_game_trophies,
+            // Theme Packages & Windows Gamepad commands (4 — total 45)
+            ipc::commands::list_installed_themes,
+            ipc::commands::import_theme_package,
+            ipc::commands::remove_installed_theme,
+            ipc::commands::list_connected_gamepads,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Universal Console Hub");

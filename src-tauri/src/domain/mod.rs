@@ -6,6 +6,7 @@ pub mod error;
 pub mod player;
 pub mod scanner;
 pub mod session;
+pub mod theme;
 pub mod trophy;
 
 #[cfg(test)]

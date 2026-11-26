@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
@@ -20,6 +21,7 @@ use crate::infrastructure::db::repositories::{FirmwareRecordDto, SqliteRepositor
 use crate::infrastructure::system::cover_cache::CoverCache;
 use crate::infrastructure::system::process_manager::ProcessManager;
 use crate::infrastructure::system::security::SecurityManager;
+use crate::infrastructure::system::windows_gamepad::WindowsGamepadMonitor;
 
 use super::backup_service::BackupService;
 use super::console_profile_sync_service::ConsoleProfileSyncService;
@@ -28,6 +30,7 @@ use super::live_session_orchestrator::LiveSessionOrchestrator;
 use super::scanner_service::ScannerService;
 use super::session_service::SessionService;
 use super::statistics_service::StatisticsService;
+use super::theme_service::ThemePackageService;
 use super::trophy_sync_service::TrophySyncService;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -114,6 +117,8 @@ pub struct AppServices {
     sessions: SessionService,
     statistics: StatisticsService,
     backups: BackupService,
+    themes: ThemePackageService,
+    gamepad_monitor: Arc<WindowsGamepadMonitor>,
 }
 
 impl AppServices {
@@ -133,16 +138,20 @@ impl AppServices {
         backup_dir: PathBuf,
         cover_cache_dir: PathBuf,
     ) -> Self {
+        let themes_dir = backup_dir.parent().unwrap_or(&backup_dir).join("themes");
         let environment = EnvironmentService::new(db.clone(), cover_cache_dir.clone());
         let console_profile_sync =
             ConsoleProfileSyncService::new(db.clone(), cover_cache_dir.clone());
         let trophy_sync = TrophySyncService::new(db.clone(), cover_cache_dir.clone());
+        let gamepad_monitor = Arc::new(WindowsGamepadMonitor::new());
         let live_sessions =
             LiveSessionOrchestrator::new(db.clone(), adapters.clone(), cover_cache_dir.clone());
+        live_sessions.attach_gamepad_monitor(Arc::clone(&gamepad_monitor));
         let scanner = ScannerService::new(db.clone());
         let sessions = SessionService::new(db.clone());
         let statistics = StatisticsService::new(db.clone());
         let backups = BackupService::new(db.clone(), backup_dir.clone());
+        let themes = ThemePackageService::new(themes_dir);
         Self {
             repos: SqliteRepositories::new(db),
             adapters,
@@ -157,7 +166,17 @@ impl AppServices {
             sessions,
             statistics,
             backups,
+            themes,
+            gamepad_monitor,
         }
+    }
+
+    pub fn theme_service(&self) -> &ThemePackageService {
+        &self.themes
+    }
+
+    pub fn gamepad_monitor(&self) -> &Arc<WindowsGamepadMonitor> {
+        &self.gamepad_monitor
     }
 
     pub fn environment_service(&self) -> &EnvironmentService {

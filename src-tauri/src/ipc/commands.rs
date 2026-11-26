@@ -24,11 +24,13 @@ use crate::domain::error::DomainError;
 use crate::domain::player::{GameRecord, PlayerProfile};
 use crate::domain::scanner::{ScanProgressEvent, ScanSummaryDto};
 use crate::domain::session::{ActiveSessionSnapshot, StatisticsOverview};
+use crate::domain::theme::InstalledThemePackage;
 use crate::domain::trophy::{AchievementProviderRecord, TrophyRecord, TrophySyncReport};
 use crate::infrastructure::db::console_env_repo::{GameDetailsDto, UpdateGameMetadataInput};
 use crate::infrastructure::db::manager::{BackupInspectionReport, BackupReport, LiveRestoreReport};
 use crate::infrastructure::db::repositories::FirmwareRecordDto;
 use crate::infrastructure::db::trophy_repo::DetailedTrophyRow;
+use crate::infrastructure::system::windows_gamepad::ConnectedGamepadInfo;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -451,4 +453,36 @@ pub fn list_game_trophies(
     services: State<'_, AppServices>,
 ) -> Result<Vec<DetailedTrophyRow>, DomainError> {
     services.trophy_sync_service().list_game_trophies(&game_id)
+}
+
+// ===== Visual Redesign: Safe Theme Packages & Windows Gamepad IPC (4 new — total 45) =====
+
+#[tauri::command]
+pub fn list_installed_themes(
+    services: State<'_, AppServices>,
+) -> Result<Vec<InstalledThemePackage>, DomainError> {
+    services.theme_service().list_installed_themes()
+}
+
+#[tauri::command]
+pub fn import_theme_package(
+    source_path: String,
+    services: State<'_, AppServices>,
+) -> Result<InstalledThemePackage, DomainError> {
+    services
+        .theme_service()
+        .import_theme_package(Path::new(source_path.trim()))
+}
+
+#[tauri::command]
+pub fn remove_installed_theme(
+    theme_id: String,
+    services: State<'_, AppServices>,
+) -> Result<bool, DomainError> {
+    services.theme_service().remove_installed_theme(&theme_id)
+}
+
+#[tauri::command]
+pub fn list_connected_gamepads(services: State<'_, AppServices>) -> Vec<ConnectedGamepadInfo> {
+    services.gamepad_monitor().list_connected_gamepads()
 }

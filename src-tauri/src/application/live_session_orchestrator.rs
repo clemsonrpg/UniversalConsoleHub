@@ -24,6 +24,7 @@ use crate::infrastructure::db::manager::DatabaseManager;
 use crate::infrastructure::db::repositories::SqliteRepositories;
 use crate::infrastructure::system::live_runner::{LiveEmulatorRunner, LiveProcessStopHandle};
 use crate::infrastructure::system::window_manager::{NoopWindowHook, WindowLifecycleHook};
+use crate::infrastructure::system::windows_gamepad::WindowsGamepadMonitor;
 
 use super::console_profile_sync_service::ConsoleProfileSyncService;
 use super::session_service::SessionService;
@@ -109,9 +110,11 @@ struct LiveSessionRuntime {
     stop_handle: Option<LiveProcessStopHandle>,
 }
 
+#[derive(Clone)]
 struct RuntimeHooks {
     window_hook: Arc<dyn WindowLifecycleHook>,
     event_sink: Arc<dyn SessionEventSink>,
+    gamepad_monitor: Option<Arc<WindowsGamepadMonitor>>,
 }
 
 #[derive(Clone)]
@@ -167,6 +170,7 @@ impl LiveSessionOrchestrator {
             hooks: Arc::new(Mutex::new(RuntimeHooks {
                 window_hook,
                 event_sink,
+                gamepad_monitor: None,
             })),
             idle_notify: Arc::new(Notify::new()),
         }
@@ -184,14 +188,21 @@ impl LiveSessionOrchestrator {
         }
     }
 
-    fn current_hooks(&self) -> (Arc<dyn WindowLifecycleHook>, Arc<dyn SessionEventSink>) {
+    pub fn attach_gamepad_monitor(&self, monitor: Arc<WindowsGamepadMonitor>) {
+        if let Ok(mut guard) = self.hooks.lock() {
+            guard.gamepad_monitor = Some(monitor);
+        }
+    }
+
+    fn current_hooks(&self) -> RuntimeHooks {
         if let Ok(guard) = self.hooks.lock() {
-            (
-                Arc::clone(&guard.window_hook),
-                Arc::clone(&guard.event_sink),
-            )
+            guard.clone()
         } else {
-            (Arc::new(NoopWindowHook), Arc::new(NoopSessionEventSink))
+            RuntimeHooks {
+                window_hook: Arc::new(NoopWindowHook),
+                event_sink: Arc::new(NoopSessionEventSink),
+                gamepad_monitor: None,
+            }
         }
     }
 
@@ -372,13 +383,23 @@ impl LiveSessionOrchestrator {
             .unwrap_or_else(|| "unknown".to_string());
         let cmd = adapter.build_system_boot_command(&install)?;
 
-        let (window_hook, event_sink) = self.current_hooks();
+        let RuntimeHooks {
+            window_hook,
+            event_sink,
+            gamepad_monitor,
+        } = self.current_hooks();
+        if let Some(gp) = gamepad_monitor.as_ref() {
+            gp.pause();
+        }
         let _ = window_hook.on_emulator_launched();
 
         let handle = match LiveEmulatorRunner::spawn(&cmd) {
             Ok(h) => h,
             Err(err) => {
                 let _ = window_hook.on_emulator_exited();
+                if let Some(gp) = gamepad_monitor.as_ref() {
+                    gp.resume_with_drain(Duration::from_millis(350));
+                }
                 return Err(err);
             }
         };
@@ -554,13 +575,23 @@ impl LiveSessionOrchestrator {
             Some(&started_at),
         )?;
 
-        let (window_hook, event_sink) = self.current_hooks();
+        let RuntimeHooks {
+            window_hook,
+            event_sink,
+            gamepad_monitor,
+        } = self.current_hooks();
+        if let Some(gp) = gamepad_monitor.as_ref() {
+            gp.pause();
+        }
         let _ = window_hook.on_emulator_launched();
 
         let handle = match LiveEmulatorRunner::spawn(&cmd) {
             Ok(h) => h,
             Err(err) => {
                 let _ = window_hook.on_emulator_exited();
+                if let Some(gp) = gamepad_monitor.as_ref() {
+                    gp.resume_with_drain(Duration::from_millis(350));
+                }
                 let _ = self
                     .session_service
                     .finish_session(&session.id, None, "launch_failed");
@@ -682,8 +713,8 @@ impl LiveSessionOrchestrator {
                         None
                     };
                     if let Some(snap) = updated_snap {
-                        let (_, sink) = self.current_hooks();
-                        sink.on_session_heartbeat(&snap);
+                        let hooks = self.current_hooks();
+                        hooks.event_sink.on_session_heartbeat(&snap);
                     }
                 }
             }
@@ -737,8 +768,15 @@ impl LiveSessionOrchestrator {
             compute_elapsed_seconds_utc(&started_at, &ended_at).unwrap_or(0)
         };
 
-        let (window_hook, event_sink) = self.current_hooks();
+        let RuntimeHooks {
+            window_hook,
+            event_sink,
+            gamepad_monitor,
+        } = self.current_hooks();
         let hub_return_ok = window_hook.on_emulator_exited().is_ok();
+        if let Some(gp) = gamepad_monitor.as_ref() {
+            gp.resume_with_drain(Duration::from_millis(350));
+        }
 
         // Record independent monitoring & hub return stages truthfully
         if is_game_session {
