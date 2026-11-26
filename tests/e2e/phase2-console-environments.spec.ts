@@ -135,6 +135,22 @@ test.beforeEach(async ({ page }) => {
       kind: 'injected_test',
       async invoke(command: string, args?: Record<string, unknown>) {
         if (command === 'get_hub_bootstrap') return structuredClone(state);
+        if (command === 'get_active_session') {
+          return {
+            phase: 'idle',
+            sessionId: null,
+            target: null,
+            consoleSlug: null,
+            gameId: null,
+            gameTitle: null,
+            emulatorSlug: null,
+            pid: null,
+            startedAt: null,
+            lastHeartbeatAt: null,
+            elapsedSeconds: 0,
+          };
+        }
+        if (command === 'get_console_profile') return null;
         if (command === 'get_console_environment') {
           const slug = String(args?.slug ?? '');
           const c = state.consoles.find((x) => x.slug === slug);

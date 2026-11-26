@@ -160,6 +160,22 @@ test.beforeEach(async ({ page }) => {
       kind: 'injected_test',
       async invoke(command: string, args?: Record<string, unknown>) {
         if (command === 'get_hub_bootstrap') return structuredClone(state);
+        if (command === 'get_active_session') {
+          return {
+            phase: 'idle',
+            sessionId: null,
+            target: null,
+            consoleSlug: null,
+            gameId: null,
+            gameTitle: null,
+            emulatorSlug: null,
+            pid: null,
+            startedAt: null,
+            lastHeartbeatAt: null,
+            elapsedSeconds: 0,
+          };
+        }
+        if (command === 'get_console_profile') return null;
         if (command === 'get_console_environment') {
           const slug = String(args?.slug ?? '');
           const consoleRec = state.consoles.find((c) => c.slug === slug);
@@ -327,14 +343,11 @@ test('navigates all Phase 1 sections, displays honest multi-capability badges, a
   await expect(page.getByText('PS3UPDAT.PUP validado')).toBeVisible();
   await expect(page.getByText('Não confirmado (Fase 3)')).toBeVisible();
 
-  // Library registration & favorite toggle
+  // Library confirms automatic discovery only (manual registration form removed in Phase 3)
   await page.getByRole('button', { name: 'Biblioteca' }).click();
-  await page.getByLabel('Título do jogo').fill('Metal Gear Solid 4');
-  await page.getByLabel('Caminho local do jogo').fill('D:\\PS3\\MGS4\\EBOOT.BIN');
-  await page.getByRole('button', { name: 'Registrar Jogo' }).click();
-  await expect(page.getByText('Metal Gear Solid 4', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Favoritar', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Favorito', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Biblioteca Universal' })).toBeVisible();
+  await expect(page.getByText('Descoberta e Sincronização Automática')).toBeVisible();
+  await expect(page.getByText('Registrar Jogo Local no Banco')).toHaveCount(0);
 
   // Profile persistence in UI state
   await page.getByRole('button', { name: 'Perfil Universal' }).click();
