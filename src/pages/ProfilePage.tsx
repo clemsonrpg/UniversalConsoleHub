@@ -35,15 +35,38 @@ export function ProfilePage({ profile, statistics, onUpdateProfile }: ProfilePag
 
   return (
     <div className={styles.page}>
-      <header className={styles.header}>
-        <div>
-          <h1 className={styles.title}>Perfil Universal</h1>
-          <p className={styles.subtitle}>
-            Identidade offline independente dos consoles individuais. Criado em{' '}
-            <span className={styles.mono}>{profile.createdAt}</span>.
-          </p>
+      <section className={styles.section} aria-label="Cartão de identidade do jogador">
+        <div className={styles.header}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <div
+              aria-hidden="true"
+              style={{
+                width: 60,
+                height: 60,
+                borderRadius: 'var(--radius-md)',
+                background: 'var(--accent-primary-muted)',
+                border: '1px solid var(--accent-primary)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontFamily: 'var(--font-display)',
+                fontWeight: 700,
+                fontSize: 'var(--text-lg)',
+              }}
+            >
+              {(profile.displayName.trim()[0] ?? 'P').toUpperCase()}
+            </div>
+            <div>
+              <h1 className={styles.title}>Perfil Universal</h1>
+              <p className={styles.subtitle}>
+                <strong>{profile.displayName}</strong> (@{profile.handle}) · Identidade offline
+                independente dos consoles individuais · Criado em{' '}
+                <span className={styles.mono}>{profile.createdAt}</span>.
+              </p>
+            </div>
+          </div>
         </div>
-      </header>
+      </section>
 
       <section className={styles.statGrid}>
         <StatTile label="Jogos registrados" value={statistics.gamesRegistered} />

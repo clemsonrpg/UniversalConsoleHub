@@ -326,6 +326,7 @@ export function ConsoleEnvironmentPage({
               <button
                 type="button"
                 className={styles.btnPrimary}
+                data-focus-default={ps3XmbReady ? 'true' : undefined}
                 disabled={!ps3XmbReady || busy || sessionBusy}
                 title={
                   ps3XmbReady
@@ -342,6 +343,7 @@ export function ConsoleEnvironmentPage({
               <button
                 type="button"
                 className={styles.btnSecondary}
+                data-focus-default={!ps3XmbReady ? 'true' : undefined}
                 disabled={syncing || busy}
                 onClick={() => void handleSyncNow()}
               >

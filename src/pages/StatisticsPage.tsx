@@ -85,19 +85,46 @@ export function StatisticsPage({
                 <th scope="col">Jogos</th>
                 <th scope="col">Sessões</th>
                 <th scope="col">Tempo Total</th>
+                <th scope="col">Participação</th>
               </tr>
             </thead>
             <tbody>
-              {overview.byConsole.map((row) => (
-                <tr key={row.consoleSlug}>
-                  <td>
-                    <strong>{row.consoleName}</strong>
-                  </td>
-                  <td>{row.gamesCount}</td>
-                  <td>{row.sessionsCount}</td>
-                  <td>{formatPlaytime(row.totalPlaytimeSeconds)}</td>
-                </tr>
-              ))}
+              {overview.byConsole.map((row) => {
+                const share =
+                  overview.totalPlaytimeSeconds > 0
+                    ? Math.round((row.totalPlaytimeSeconds / overview.totalPlaytimeSeconds) * 100)
+                    : 0;
+                return (
+                  <tr key={row.consoleSlug}>
+                    <td>
+                      <strong>{row.consoleName}</strong>
+                    </td>
+                    <td>{row.gamesCount}</td>
+                    <td>{row.sessionsCount}</td>
+                    <td>{formatPlaytime(row.totalPlaytimeSeconds)}</td>
+                    <td style={{ minWidth: 120 }}>
+                      <div
+                        style={{
+                          height: 6,
+                          borderRadius: 999,
+                          background: 'var(--bg-surface-raised)',
+                          overflow: 'hidden',
+                          marginBottom: 4,
+                        }}
+                      >
+                        <div
+                          style={{
+                            height: '100%',
+                            width: `${share}%`,
+                            background: 'var(--accent-primary)',
+                          }}
+                        />
+                      </div>
+                      <span className={styles.mono}>{share}%</span>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

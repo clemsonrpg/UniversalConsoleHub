@@ -829,9 +829,13 @@ function AppThemedWorkspace(props: AppThemedWorkspaceProps) {
 
         {!selectedGameDetails && section === 'library' ? (
           <LibraryPage
+            key={bootstrap.settings['theme.active_id'] ?? 'universal-modern'}
             consoles={bootstrap.consoles}
             games={bootstrap.games}
             rpcs3Ready={rpcs3Ready}
+            defaultView={
+              bootstrap.settings['theme.active_id'] === 'xmb-inspired' ? 'list' : 'grid'
+            }
             activeSession={activeSession}
             onToggleFavorite={onToggleFavorite}
             onOpenGame={onOpenGame}
