@@ -430,9 +430,9 @@ fn upgrades_real_phase1_v1_database_to_v2_preserving_all_records_constraints_and
         let version: i64 = conn
             .query_row("PRAGMA user_version;", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 3, "upgraded database must be at schema version 3");
+        assert_eq!(version, 4, "upgraded database must be at schema version 4");
 
-        // All 24 STRICT tables must exist (19 from v1 + 3 from v2 + 2 from v3)
+        // All 25 STRICT tables must exist (19 from v1 + 3 from v2 + 2 from v3 + 1 from v4)
         let mut stmt = conn
             .prepare(
                 "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
@@ -443,13 +443,14 @@ fn upgrades_real_phase1_v1_database_to_v2_preserving_all_records_constraints_and
             .unwrap()
             .map(|r| r.unwrap())
             .collect();
-        assert_eq!(tables.len(), 24, "expected 24 total tables after v3 migration");
+        assert_eq!(tables.len(), 25, "expected 25 total tables after v4 migration");
         for new_table in [
             "console_scan_paths",
             "console_settings",
             "console_runtime_verifications",
             "console_profiles",
             "console_local_users",
+            "trophy_sets",
         ] {
             assert!(tables.contains(new_table), "missing migrated table {new_table}");
         }
@@ -628,9 +629,9 @@ fn inspects_and_live_restores_backup_with_open_wal_connection_including_v1_backu
         .expect("create valid v2 backup while WAL open");
 
     // 1. Inspect backup before restoring
-    let inspection = DatabaseManager::inspect_backup(&backup_v2_path).expect("inspect v3 backup");
+    let inspection = DatabaseManager::inspect_backup(&backup_v2_path).expect("inspect v4 backup");
     assert!(inspection.integrity_ok);
-    assert_eq!(inspection.schema_version, 3);
+    assert_eq!(inspection.schema_version, 4);
     assert_eq!(inspection.profiles_count, 1);
     assert_eq!(inspection.games_count, 1);
     assert!(inspection.size_bytes > 0);
@@ -700,7 +701,7 @@ fn inspects_and_live_restores_backup_with_open_wal_connection_including_v1_backu
         .restore_from_backup_live(&backup_v2_path, &safety_dir)
         .expect("live restore over open WAL connection on Windows");
     assert!(live_report.integrity_ok);
-    assert_eq!(live_report.schema_version, 3);
+    assert_eq!(live_report.schema_version, 4);
     assert!(
         live_report.pre_restore_snapshot_path.is_file(),
         "pre-restore snapshot must exist"
@@ -746,9 +747,9 @@ fn inspects_and_live_restores_backup_with_open_wal_connection_including_v1_backu
 
     let v1_restore = db
         .restore_from_backup_live(&v1_backup_path, &safety_dir)
-        .expect("live restore of v1 backup must auto-migrate to v3");
+        .expect("live restore of v1 backup must auto-migrate to v4");
     assert!(v1_restore.integrity_ok);
-    assert_eq!(v1_restore.schema_version, 3);
+    assert_eq!(v1_restore.schema_version, 4);
     assert_eq!(
         repos.get_active_profile().unwrap().display_name,
         "V1 Veteran"
@@ -757,7 +758,7 @@ fn inspects_and_live_restores_backup_with_open_wal_connection_including_v1_backu
         let version: i64 = conn
             .query_row("PRAGMA user_version;", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 3);
+        assert_eq!(version, 4);
         let new_table_exists: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'console_profiles'",

@@ -18,6 +18,17 @@ impl TrophyOrigin {
             Self::Local => "local",
         }
     }
+
+    pub fn parse(raw: &str) -> Result<Self, DomainError> {
+        match raw {
+            "official" => Ok(Self::Official),
+            "emulator" => Ok(Self::Emulator),
+            "local" => Ok(Self::Local),
+            other => Err(DomainError::Validation(format!(
+                "invalid trophy origin: {other}"
+            ))),
+        }
+    }
 }
 
 pub fn ensure_immutable_origin(
@@ -44,6 +55,37 @@ pub enum TrophyCategory {
     SteamAchievement,
     EmulatorAchievement,
     HubLocal,
+}
+
+impl TrophyCategory {
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Bronze => "bronze",
+            Self::Silver => "silver",
+            Self::Gold => "gold",
+            Self::Platinum => "platinum",
+            Self::XboxAchievement => "xbox_achievement",
+            Self::SteamAchievement => "steam_achievement",
+            Self::EmulatorAchievement => "emulator_achievement",
+            Self::HubLocal => "hub_local",
+        }
+    }
+
+    pub fn parse(raw: &str) -> Result<Self, DomainError> {
+        match raw {
+            "bronze" => Ok(Self::Bronze),
+            "silver" => Ok(Self::Silver),
+            "gold" => Ok(Self::Gold),
+            "platinum" => Ok(Self::Platinum),
+            "xbox_achievement" => Ok(Self::XboxAchievement),
+            "steam_achievement" => Ok(Self::SteamAchievement),
+            "emulator_achievement" => Ok(Self::EmulatorAchievement),
+            "hub_local" => Ok(Self::HubLocal),
+            other => Err(DomainError::Validation(format!(
+                "invalid trophy category: {other}"
+            ))),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

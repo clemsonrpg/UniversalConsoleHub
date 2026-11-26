@@ -5,3 +5,4 @@ pub mod migrations;
 pub mod repositories;
 pub mod seed;
 pub mod session_stats_repo;
+pub mod trophy_repo;
