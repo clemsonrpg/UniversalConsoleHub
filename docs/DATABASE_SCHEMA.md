@@ -11,13 +11,13 @@ PRAGMA temp_store = MEMORY;
 ```
 
 ## Política de Compatibilidade de Migrações
-- Versionamento controlado por `PRAGMA user_version` (`1` na Fase 1; `2` implementada na Fase 2; `3` planejada para a Fase 3).
-- **Total de tabelas:** `19` tabelas `STRICT` na Migration `0001` (Fase 1) + `3` novas tabelas `STRICT` na Migration `0002` (Fase 2) + `2` novas tabelas `STRICT` na Migration `0003` (Fase 3) = **`24` tabelas `STRICT`** ao concluir a Migration `0003`.
+- Versionamento controlado por `PRAGMA user_version` (`1` na Fase 1; `2` na Fase 2; `3` na Fase 3; `4` implementada na Fase 4).
+- **Total de tabelas:** `19` tabelas `STRICT` na Migration `0001` (Fase 1) + `3` na Migration `0002` (Fase 2) + `2` na Migration `0003` (Fase 3) + `1` na Migration `0004` (Fase 4) = **`25` tabelas `STRICT`** no schema `v4`.
 - **Transacionalidade:** Cada migração executa dentro de `BEGIN IMMEDIATE` com verificação obrigatória de `PRAGMA foreign_key_check` e `PRAGMA quick_check` antes do `COMMIT`.
 - **Estritamente aditiva e não-destrutiva:** Migrações jamais descartam ou recriam tabelas, dados, índices, constraints ou triggers existentes (`trg_trophies_immutable_origin`, `trg_trophy_unlocks_immutable_origin`).
-- **Nota crítica sobre `game_versions`:** A tabela `game_versions` **já existe como Tabela #8 da Migration `0001`** (já referenciada por `game_sessions.game_version_id` e gravada em produção pela Fase 1). Portanto, as Migrations `0002` e `0003` **não recriam** `game_versions`; elas preservam integralmente os dados existentes e aplicam apenas índices (`0002`) e colunas aditivas com valor padrão/nulo (`0003`).
+- **Nota crítica sobre `game_versions`:** A tabela `game_versions` **já existe como Tabela #8 da Migration `0001`** (já referenciada por `game_sessions.game_version_id` e gravada em produção pela Fase 1). Portanto, as Migrations `0002`–`0004` **não recriam** `game_versions`; elas preservam integralmente os dados existentes.
 - **Proteção contra downgrade/versão futura:** Se `PRAGMA user_version > LATEST_SCHEMA_VERSION`, a abertura do banco **aborta com erro explícito sem modificar o arquivo**.
-- **Validação obrigatória de upgrade:** Toda nova migração possui testes de integração reais migrando cópias populadas dos schemas anteriores (`v1 → v2`, `v1 → v3` e `v2 → v3`).
+- **Validação obrigatória de upgrade:** Toda nova migração possui testes de integração reais migrando cópias populadas dos schemas anteriores (`v1 → v4`, `v2 → v4`, `v3 → v4`).
 
 ---
 
@@ -228,7 +228,41 @@ CREATE INDEX IF NOT EXISTS idx_trophy_unlocks_local_user
 ### Garantias da Migration `0003`
 - **Separação Console vs. Jogador:** `console_profiles` (#23) nunca mistura nome de jogador com identidade de hardware/emulador; `console_local_users` (#24) suporta `0..N` usuários locais reais por console (nunca inventando registros quando a plataforma não fornece usuários).
 - **Preservação de Histórico:** `availability_status = 'missing_on_disk'` em `game_versions` e `console_local_users` + `emulator_status = 'missing_on_disk'` em `console_profiles` garantem que nenhuma sessão, estatística ou jogo histórico seja apagado quando arquivos forem movidos ou removidos.
-- **Prontidão para Conquistas Completas (Fase 4):** `trophies` (#11) já armazena `external_trophy_id`, `name`, `description`, `icon_path`, `category`, `rarity_percent` e `origin` (imutável); `trophy_unlocks` (#12) já armazena `unlocked_at`, `synced_at`, `origin` (imutável) e passa a aceitar `console_local_user_id` opcional para atribuição futura por usuário local do console na Fase 4.
+- **Prontidão para Conquistas Completas (Fase 4):** `trophies` (#11) já armazena `external_trophy_id`, `name`, `description`, `icon_path`, `category`, `rarity_percent` e `origin` (imutável); `trophy_unlocks` (#12) já armazena `unlocked_at`, `synced_at`, `origin` (imutável) e aceita `console_local_user_id` opcional.
+
+---
+
+## Schema Definitivo — Migration `0004_trophy_sets_and_hidden.sql` (Fase 4 — Implementada, `user_version = 4`)
+
+A Migration `0004` é **100% aditiva e não-destrutiva**: cria a **Tabela `STRICT` #25 (`trophy_sets`)**, adiciona colunas aditivas `trophy_set_id` e `is_hidden` na tabela `trophies` (#11) preservando integralmente os triggers de imutabilidade de `origin`, e ativa `EmulatorAchievementProvider` (`ready_offline`, `supports_sync = 1`).
+
+```sql
+-- Table #25: Trophy Sets per game / platform (e.g. PS3 NPWRxxxxx_00 from TROPCONF.SFM)
+CREATE TABLE trophy_sets (
+    id TEXT PRIMARY KEY NOT NULL,
+    console_id TEXT NOT NULL REFERENCES consoles(id) ON DELETE CASCADE,
+    game_id TEXT NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+    provider_id TEXT NOT NULL REFERENCES achievement_providers(id) ON DELETE RESTRICT,
+    external_set_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    detail TEXT NOT NULL DEFAULT '',
+    icon_path TEXT,
+    total_count INTEGER NOT NULL DEFAULT 0 CHECK (total_count >= 0),
+    supports_platinum INTEGER NOT NULL DEFAULT 0 CHECK (supports_platinum IN (0, 1)),
+    updated_at TEXT NOT NULL CHECK (updated_at LIKE '____-__-__T__:__:__%Z'),
+    UNIQUE(provider_id, external_set_id)
+) STRICT;
+
+ALTER TABLE trophies
+    ADD COLUMN trophy_set_id TEXT REFERENCES trophy_sets(id) ON DELETE SET NULL;
+
+ALTER TABLE trophies
+    ADD COLUMN is_hidden INTEGER NOT NULL DEFAULT 0 CHECK (is_hidden IN (0, 1));
+
+CREATE INDEX IF NOT EXISTS idx_trophy_sets_game ON trophy_sets(game_id);
+CREATE INDEX IF NOT EXISTS idx_trophy_sets_console ON trophy_sets(console_id);
+CREATE INDEX IF NOT EXISTS idx_trophies_set ON trophies(trophy_set_id) WHERE trophy_set_id IS NOT NULL;
+```
 
 ---
 

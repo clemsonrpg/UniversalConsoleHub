@@ -26,10 +26,11 @@ Entregou a camada completa de ambientes independentes por console (`ConsoleEnvir
 - **Gerenciamento de janela Windows (`WindowsWindowManager`):** minimizar/ocultar Hub e restaurar foco automaticamente ao sair + suspensão de navegação do Hub durante jogo.
 - **Verificação independente dos 7 estados de console jogável** (`emulator_launch`, `system_boot`, `original_dashboard`, `game_boot`, `per_game_compatibility`, `session_monitoring`, `hub_return`), sem prometer compatibilidade universal de jogos.
 
-### Phase 4 — Universal Trophy Center (Integrado às Sessões Reais do PS3)
-- Leitor somente leitura de troféus locais do RPCS3 (`dev_hdd0/home/<user>/trophy/<NPCOMMID>/` — `TROPCONF.SFM` + `TROPUSR.DAT` + ícones locais em cache), aproveitando a estrutura preparada em `trophies` (#11), `trophy_unlocks` (#12, incluindo vínculo opcional `console_local_user_id`) e `console_local_users` (#24).
-- Sincronização automática pós-sessão acoplada ao encerramento de sessões reais do PS3 (`LiveSessionOrchestrator` → `TrophySync`).
-- `LocalAchievementProvider` completo, notificações idempotentes, histórico de desbloqueios, filtros, progresso por jogo/geral e raridade honesta.
+### Phase 4 — Universal Trophy Center (CONCLUÍDA & VERIFICADA — OPÇÃO A)
+- `Migration 0004` (`24 → 25` tabelas `STRICT`: `trophy_sets` #25 + `trophies.trophy_set_id`/`is_hidden` + ativação do `EmulatorAchievementProvider` offline) e `TrophyRepository` idempotente sem regressão de desbloqueios.
+- Leitor estritamente somente leitura de troféus locais do RPCS3 (`Rpcs3TrophyReader`: `TROPCONF.SFM`/`TROP.SFM` XML + `TROPUSR.DAT` binário big-endian checado por limites + ícones locais em cache via `CoverCache`), aproveitando `trophies` (#11), `trophy_unlocks` (#12, incluindo vínculo `console_local_user_id`) e `console_local_users` (#24).
+- `TrophySyncService` acoplado automaticamente ao encerramento de sessões reais do PS3 (`LiveSessionOrchestrator` → `TrophySyncService`) + 3 novos comandos IPC (`sync_console_trophies`, `get_trophy_center_overview`, `list_game_trophies` — total 41) e eventos `trophies:synced`/`trophies:unlocked`.
+- Central Universal de Troféus completa (`TrophiesPage`), seção de troféus em `GameDetailsPage` e resumo de troféus no perfil do PS3 (`ConsoleEnvironmentPage`) com progresso por jogo/geral, Platina/Ouro/Prata/Bronze, filtros, ocultação de spoilers com toggle explícito, linha do tempo cronológica e raridade honesta `Local / Offline`.
 
 ### Phase 5 — Additional Playable Consoles (Um por Vez, com Validação Real)
 Cada console só é marcado funcional após verificação independente das etapas aplicáveis (nunca generalizando compatibilidade universal de títulos):
