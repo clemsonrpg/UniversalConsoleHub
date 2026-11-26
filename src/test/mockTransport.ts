@@ -16,6 +16,7 @@ import type {
   GameRecord,
   GameVersionRecord,
   HubBootstrapDto,
+  InstalledThemePackage,
   LiveRestoreReport,
   PlayerProfile,
   RecordRuntimeVerificationRequest,
@@ -873,6 +874,98 @@ export function createStatefulTestTransport(): HubTransport {
         case 'list_game_trophies': {
           const rows: DetailedTrophyRow[] = [];
           return rows as T;
+        }
+        case 'list_installed_themes': {
+          const store =
+            (state as unknown as { __installedThemes?: InstalledThemePackage[] })
+              .__installedThemes ?? [];
+          return structuredClone(store) as T;
+        }
+        case 'import_theme_package': {
+          const sourcePath = String(args?.sourcePath ?? 'C:\\Themes\\custom.json');
+          const id = `custom-${Date.now()}`;
+          const pkg: InstalledThemePackage = {
+            manifest: {
+              id,
+              name: 'Custom Imported Theme',
+              author: 'Local Package',
+              version: '1.0.0',
+              description: `Tema importado de ${sourcePath}`,
+              hubVersionRange: '>=0.1.0',
+              previewImage: null,
+              backgroundImage: null,
+              fonts: {
+                display: "'Segoe UI Variable Display', sans-serif",
+                body: "'Segoe UI', sans-serif",
+                mono: "'Cascadia Code', monospace",
+              },
+              assets: {},
+              palette: {
+                canvas: '#0d1117',
+                rail: '#121821',
+                surface: '#161f2c',
+                surfaceRaised: '#1e2a3a',
+                input: '#0e141c',
+                borderSubtle: '#263447',
+                borderStrong: '#384c66',
+                textPrimary: '#f2f6fb',
+                textSecondary: '#a3b3c6',
+                textMuted: '#6f8196',
+                accentPrimary: '#06b6d4',
+                accentHover: '#22d3ee',
+                accentMuted: 'rgba(6, 182, 212, 0.16)',
+                accentSecondary: '#f59e0b',
+                focusRing: '#06b6d4',
+              },
+              layout: {
+                shell: 'sidebar',
+                libraryDefaultView: 'grid',
+                cardAspect: 'poster',
+                density: 'comfortable',
+              },
+              components: {
+                focusStyle: 'ring',
+                surfaceStyle: 'matte',
+                backdropBlur: true,
+                showHeroArt: true,
+                showClock: true,
+                radiusSm: 6,
+                radiusMd: 10,
+                radiusLg: 16,
+              },
+              motion: {
+                pageTransition: 'fade',
+                durationMs: 160,
+                respectReducedMotion: true,
+              },
+              customizableSettings: [
+                {
+                  key: 'accentPrimary',
+                  label: 'Cor de destaque',
+                  kind: 'color',
+                  defaultValue: '#06b6d4',
+                },
+              ],
+            },
+            installedDir: `C:\\Users\\player\\AppData\\Local\\UniversalConsoleHub\\themes\\${id}`,
+            previewImagePath: null,
+            backgroundImagePath: null,
+            assetPaths: {},
+            installedAt: '2026-11-26T00:00:00Z',
+          };
+          const holder = state as unknown as { __installedThemes?: InstalledThemePackage[] };
+          holder.__installedThemes = [...(holder.__installedThemes ?? []), pkg];
+          return structuredClone(pkg) as T;
+        }
+        case 'remove_installed_theme': {
+          const themeId = String(args?.themeId ?? '');
+          const holder = state as unknown as { __installedThemes?: InstalledThemePackage[] };
+          const prev = holder.__installedThemes ?? [];
+          holder.__installedThemes = prev.filter((item) => item.manifest.id !== themeId);
+          return (holder.__installedThemes.length < prev.length) as T;
+        }
+        case 'list_connected_gamepads': {
+          return [] as T;
         }
         default:
           throw new Error(`Comando não suportado no transporte de teste: ${command}`);

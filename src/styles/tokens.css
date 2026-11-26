@@ -1,24 +1,26 @@
 :root {
-  /* Obsidian Hardware palette — matte precision surfaces, zero neon, zero excessive glass */
-  --bg-canvas: #0d1015;
-  --bg-rail: #11151d;
-  --bg-surface: #151a24;
-  --bg-surface-raised: #1c2230;
-  --bg-input: #0f131b;
+  /* Dynamic Theme Engine tokens — defaults correspond to Universal Modern */
+  --bg-canvas: #0a0d12;
+  --bg-rail: #0f141c;
+  --bg-surface: #141b25;
+  --bg-surface-raised: #1c2533;
+  --bg-input: #0d121a;
 
-  --border-subtle: #232a38;
-  --border-strong: #343e52;
+  --border-subtle: #222c3c;
+  --border-strong: #344259;
 
   --text-primary: #f2f5fa;
-  --text-secondary: #a1acb9;
-  --text-muted: #727d8e;
+  --text-secondary: #a3b0c2;
+  --text-muted: #6f7e94;
 
-  /* Calibrated hardware steel-blue focus/action accent */
   --accent-primary: #3b82f6;
-  --accent-primary-hover: #5394ff;
-  --accent-primary-muted: rgba(59, 130, 246, 0.14);
+  --accent-primary-hover: #5b9bff;
+  --accent-primary-muted: rgba(59, 130, 246, 0.16);
+  --accent-secondary: #f59e0b;
+  --accent-contrast-text: #ffffff;
+  --focus-color: #3b82f6;
 
-  /* Sober semantic accents for capability & readiness statuses */
+  /* Calibrated semantic capability & readiness colors */
   --status-ok: #22c55e;
   --status-ok-bg: rgba(34, 197, 94, 0.12);
   --status-info: #38bdf8;
@@ -32,19 +34,21 @@
   --status-danger: #ef4444;
   --status-danger-bg: rgba(239, 68, 68, 0.12);
 
-  /* Typography scaled for 1080p desktop & 4K TV viewing */
-  --font-sans: 'Segoe UI Variable Display', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  /* Typography scaled for 1080p desktop, 1440p monitors & 4K TVs */
+  --font-display: 'Segoe UI Variable Display', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-sans: 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, sans-serif;
   --font-mono: 'Cascadia Code', 'Consolas', 'Courier New', monospace;
 
-  --text-xs: clamp(0.75rem, 0.7rem + 0.15vw, 0.875rem);
-  --text-sm: clamp(0.875rem, 0.82rem + 0.18vw, 1rem);
-  --text-base: clamp(0.95rem, 0.9rem + 0.22vw, 1.125rem);
-  --text-lg: clamp(1.15rem, 1.05rem + 0.35vw, 1.4rem);
-  --text-xl: clamp(1.5rem, 1.3rem + 0.6vw, 2.1rem);
+  --text-xs: clamp(0.75rem, 0.7rem + 0.14vw, 0.9rem);
+  --text-sm: clamp(0.875rem, 0.82rem + 0.18vw, 1.02rem);
+  --text-base: clamp(0.96rem, 0.9rem + 0.22vw, 1.15rem);
+  --text-lg: clamp(1.18rem, 1.05rem + 0.35vw, 1.48rem);
+  --text-xl: clamp(1.55rem, 1.32rem + 0.65vw, 2.25rem);
+  --text-hero: clamp(1.9rem, 1.55rem + 1.15vw, 3.1rem);
 
   --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
 
   --space-1: 4px;
   --space-2: 8px;
@@ -53,12 +57,34 @@
   --space-5: 24px;
   --space-6: 32px;
 
-  --focus-ring: 0 0 0 2px var(--bg-canvas), 0 0 0 4px var(--accent-primary);
-  --transition-fast: 140ms cubic-bezier(0.2, 0, 0, 1);
+  --library-card-min: 205px;
+  --hero-backdrop-opacity: 0.42;
+  --theme-bg-image: none;
+
+  --focus-ring: 0 0 0 2px var(--bg-canvas), 0 0 0 4px var(--focus-color);
+  --transition-fast: 160ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* 10-Foot Fullscreen / TV Mode Scale */
+:root[data-display-mode='fullscreen'] {
+  --text-xs: clamp(0.88rem, 0.82rem + 0.2vw, 1.05rem);
+  --text-sm: clamp(1rem, 0.94rem + 0.25vw, 1.2rem);
+  --text-base: clamp(1.12rem, 1.04rem + 0.3vw, 1.36rem);
+  --text-lg: clamp(1.36rem, 1.22rem + 0.45vw, 1.78rem);
+  --text-xl: clamp(1.85rem, 1.55rem + 0.8vw, 2.65rem);
+  --text-hero: clamp(2.25rem, 1.85rem + 1.35vw, 3.6rem);
+  --space-4: 20px;
+  --space-5: 28px;
+  --space-6: 38px;
+  --library-card-min: 245px;
 }
 
 @media (prefers-reduced-motion: reduce) {
   :root {
     --transition-fast: 0ms;
   }
+}
+
+:root[data-reduced-motion='true'] {
+  --transition-fast: 0ms;
 }

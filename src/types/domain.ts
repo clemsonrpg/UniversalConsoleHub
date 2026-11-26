@@ -690,3 +690,139 @@ export interface TrophySyncReport {
   diagnostics: string[];
   syncedAt: string;
 }
+
+// ===== Visual Redesign: Extensible Theme Engine, Display Modes & Gamepad Contracts =====
+
+export type DisplayMode = 'desktop' | 'fullscreen';
+
+export type ThemeShellLayout = 'sidebar' | 'topbar_blades' | 'minimal_dock' | 'xmb_crossbar';
+export type ThemeLibraryView = 'grid' | 'list';
+export type ThemeCardAspect = 'poster' | 'square' | 'wide';
+export type ThemeDensity = 'comfortable' | 'compact' | 'tv_large';
+export type ThemeFocusStyle = 'ring' | 'glow_bar' | 'bracket' | 'xmb_wave';
+export type ThemeSurfaceStyle = 'matte' | 'beveled' | 'flat' | 'layered';
+export type ThemePageTransition = 'fade' | 'slide' | 'scale' | 'none';
+export type ThemeCustomSettingKind = 'color' | 'select' | 'boolean' | 'range';
+
+export interface ThemeFonts {
+  display: string;
+  body: string;
+  mono: string;
+}
+
+export interface ThemePalette {
+  canvas: string;
+  rail: string;
+  surface: string;
+  surfaceRaised: string;
+  input: string;
+  borderSubtle: string;
+  borderStrong: string;
+  textPrimary: string;
+  textSecondary: string;
+  textMuted: string;
+  accentPrimary: string;
+  accentHover: string;
+  accentMuted: string;
+  accentSecondary: string;
+  focusRing: string;
+}
+
+export interface ThemeLayoutConfig {
+  shell: ThemeShellLayout;
+  libraryDefaultView: ThemeLibraryView;
+  cardAspect: ThemeCardAspect;
+  density: ThemeDensity;
+}
+
+export interface ThemeComponentsConfig {
+  focusStyle: ThemeFocusStyle;
+  surfaceStyle: ThemeSurfaceStyle;
+  backdropBlur: boolean;
+  showHeroArt: boolean;
+  showClock: boolean;
+  radiusSm: number;
+  radiusMd: number;
+  radiusLg: number;
+}
+
+export interface ThemeMotionConfig {
+  pageTransition: ThemePageTransition;
+  durationMs: number;
+  respectReducedMotion: boolean;
+}
+
+export interface ThemeSettingOption {
+  value: string;
+  label: string;
+}
+
+export interface ThemeCustomSettingDef {
+  key: string;
+  label: string;
+  kind: ThemeCustomSettingKind;
+  defaultValue: string;
+  options?: ThemeSettingOption[];
+  min?: number | null;
+  max?: number | null;
+}
+
+export interface ThemeManifest {
+  id: string;
+  name: string;
+  author: string;
+  version: string;
+  description: string;
+  hubVersionRange: string;
+  previewImage: string | null;
+  backgroundImage: string | null;
+  fonts: ThemeFonts;
+  assets: Record<string, string>;
+  palette: ThemePalette;
+  layout: ThemeLayoutConfig;
+  components: ThemeComponentsConfig;
+  motion: ThemeMotionConfig;
+  customizableSettings: ThemeCustomSettingDef[];
+}
+
+export interface InstalledThemePackage {
+  manifest: ThemeManifest;
+  installedDir: string;
+  previewImagePath: string | null;
+  backgroundImagePath: string | null;
+  assetPaths: Record<string, string>;
+  installedAt: string;
+}
+
+export type GamepadGlyphFamily = 'xbox' | 'playstation' | 'nintendo' | 'generic';
+
+export type GamepadNavAction =
+  | 'up'
+  | 'down'
+  | 'left'
+  | 'right'
+  | 'confirm'
+  | 'back'
+  | 'secondary'
+  | 'context_menu'
+  | 'prev_tab'
+  | 'next_tab'
+  | 'page_prev'
+  | 'page_next'
+  | 'quick_menu'
+  | 'toggle_mode';
+
+export interface ConnectedGamepadInfo {
+  slot: number;
+  name: string;
+  backend: string;
+  glyphFamily: GamepadGlyphFamily;
+  connected: boolean;
+}
+
+export interface GamepadActionEvent {
+  slot: number;
+  action: GamepadNavAction;
+  glyphFamily: GamepadGlyphFamily;
+  repeated: boolean;
+}

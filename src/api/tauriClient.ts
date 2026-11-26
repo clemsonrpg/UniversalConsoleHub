@@ -12,12 +12,15 @@ import type {
   ConsoleScanPath,
   ConsoleSetting,
   ConsoleSyncReport,
+  ConnectedGamepadInfo,
   DetailedTrophyRow,
   EmulatorRecord,
   FirmwareRecordDto,
   GameDetailsDto,
+  GamepadActionEvent,
   GameRecord,
   HubBootstrapDto,
+  InstalledThemePackage,
   LiveRestoreReport,
   NewlyUnlockedTrophy,
   PlayerProfile,
@@ -287,6 +290,24 @@ export class HubApiClient {
   listGameTrophies(gameId: string): Promise<DetailedTrophyRow[]> {
     return this.transport.invoke('list_game_trophies', { gameId });
   }
+
+  // ===== Theme Packages & Native Windows Gamepad IPC (4 new commands) =====
+
+  listInstalledThemes(): Promise<InstalledThemePackage[]> {
+    return this.transport.invoke('list_installed_themes');
+  }
+
+  importThemePackage(sourcePath: string): Promise<InstalledThemePackage> {
+    return this.transport.invoke('import_theme_package', { sourcePath });
+  }
+
+  removeInstalledTheme(themeId: string): Promise<boolean> {
+    return this.transport.invoke('remove_installed_theme', { themeId });
+  }
+
+  listConnectedGamepads(): Promise<ConnectedGamepadInfo[]> {
+    return this.transport.invoke('list_connected_gamepads');
+  }
 }
 
 export interface HubRuntimeEventHandlers {
@@ -296,6 +317,8 @@ export interface HubRuntimeEventHandlers {
   onProfileSynced?: (report: ConsoleSyncReport) => void;
   onTrophiesSynced?: (report: TrophySyncReport) => void;
   onTrophiesUnlocked?: (unlocked: NewlyUnlockedTrophy[]) => void;
+  onGamepadDevices?: (devices: ConnectedGamepadInfo[]) => void;
+  onGamepadAction?: (event: GamepadActionEvent) => void;
 }
 
 export async function subscribeHubRuntimeEvents(
@@ -345,6 +368,20 @@ export async function subscribeHubRuntimeEvents(
     unlisteners.push(
       await listen<NewlyUnlockedTrophy[]>('trophies:unlocked', (evt) =>
         handlers.onTrophiesUnlocked?.(evt.payload)
+      )
+    );
+  }
+  if (handlers.onGamepadDevices) {
+    unlisteners.push(
+      await listen<ConnectedGamepadInfo[]>('gamepad:devices', (evt) =>
+        handlers.onGamepadDevices?.(evt.payload)
+      )
+    );
+  }
+  if (handlers.onGamepadAction) {
+    unlisteners.push(
+      await listen<GamepadActionEvent>('gamepad:action', (evt) =>
+        handlers.onGamepadAction?.(evt.payload)
       )
     );
   }
