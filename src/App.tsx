@@ -7,7 +7,10 @@ import {
 } from './api/tauriClient';
 import { ActiveSessionBanner } from './components/ActiveSessionBanner';
 import { AppShell } from './components/AppShell';
-import { useHubNavigation, type HubSectionId } from './hooks/useHubNavigation';
+import { QuickMenuModal } from './components/QuickMenuModal';
+import { HUB_SECTIONS, type HubSectionId } from './hooks/useHubNavigation';
+import { globalFocusManager } from './input/focusManager';
+import { InputProvider, useInput } from './input/InputProvider';
 import { ConsoleEnvironmentPage } from './pages/ConsoleEnvironmentPage';
 import { ConsolesPage } from './pages/ConsolesPage';
 import { EmulatorsPage } from './pages/EmulatorsPage';
@@ -20,15 +23,19 @@ import { SettingsPage } from './pages/SettingsPage';
 import { StatisticsPage } from './pages/StatisticsPage';
 import { TrophiesPage } from './pages/TrophiesPage';
 import trophyStyles from './pages/TrophiesPage.module.css';
+import { ThemeProvider } from './themes/ThemeProvider';
 import type {
   ActiveSessionSnapshot,
   ActivityEntryDto,
   BackupFileEntry,
+  ConnectedGamepadInfo,
   ConsoleEnvironmentDto,
   ConsoleProfileOverviewDto,
   DetailedTrophyRow,
   GameDetailsDto,
+  GamepadActionEvent,
   HubBootstrapDto,
+  InstalledThemePackage,
   NewlyUnlockedTrophy,
   RecordRuntimeVerificationRequest,
   ScanProgressEvent,
@@ -79,8 +86,23 @@ export function App() {
   const [statsOverview, setStatsOverview] = useState<StatisticsOverview | null>(null);
   const [activityItems, setActivityItems] = useState<ActivityEntryDto[]>([]);
   const [backups, setBackups] = useState<BackupFileEntry[]>([]);
+  const [installedThemes, setInstalledThemes] = useState<InstalledThemePackage[]>([]);
+  const [nativeGamepads, setNativeGamepads] = useState<ConnectedGamepadInfo[]>([]);
+  const [lastNativeGamepadAction, setLastNativeGamepadAction] = useState<GamepadActionEvent | null>(
+    null
+  );
   const [bootstrap, setBootstrap] = useState<HubBootstrapDto | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  const refreshInstalledThemes = useCallback(async () => {
+    if (!clientResolution.client) return;
+    try {
+      const list = await clientResolution.client.listInstalledThemes();
+      setInstalledThemes(list);
+    } catch {
+      setInstalledThemes([]);
+    }
+  }, [clientResolution.client]);
 
   const refreshBootstrap = useCallback(async () => {
     if (!clientResolution.client) return;
@@ -143,6 +165,7 @@ export function App() {
 
   const handleSelectSection = useCallback(
     (next: HubSectionId) => {
+      globalFocusManager.rememberSectionFocus(section);
       setSection(next);
       setSelectedConsoleSlug(null);
       setConsoleEnv(null);
@@ -156,23 +179,53 @@ export function App() {
         void refreshBackups();
       } else if (next === 'trophies') {
         void refreshTrophyOverview();
+      } else if (next === 'themes') {
+        void refreshInstalledThemes();
       }
+      window.setTimeout(() => globalFocusManager.focusSectionEntry(next, false), 0);
     },
-    [refreshBackups, refreshStatistics, refreshTrophyOverview]
+    [section, refreshBackups, refreshStatistics, refreshTrophyOverview, refreshInstalledThemes]
   );
 
-  // Suspend Hub keyboard shortcuts while a live emulator session is active
-  useHubNavigation(section, handleSelectSection, activeSession.phase !== 'idle');
+  const handleCycleSection = useCallback(
+    (delta: number) => {
+      const idx = HUB_SECTIONS.indexOf(section);
+      const next = HUB_SECTIONS[(idx + delta + HUB_SECTIONS.length) % HUB_SECTIONS.length];
+      if (next) handleSelectSection(next);
+    },
+    [section, handleSelectSection]
+  );
+
+  const handleNavigateBack = useCallback((): boolean => {
+    if (selectedGameDetails) {
+      setSelectedGameDetails(null);
+      setSelectedGameTrophies([]);
+      return true;
+    }
+    if (selectedConsoleSlug) {
+      setSelectedConsoleSlug(null);
+      setConsoleEnv(null);
+      setConsoleProfile(null);
+      setConsoleTrophyOverview(null);
+      return true;
+    }
+    return false;
+  }, [selectedGameDetails, selectedConsoleSlug]);
 
   useEffect(() => {
     void refreshBootstrap();
+    void refreshInstalledThemes();
     if (clientResolution.client) {
       void clientResolution.client
         .getActiveSession()
         .then(setActiveSession)
         .catch(() => setActiveSession(IDLE_SESSION));
+      void clientResolution.client
+        .listConnectedGamepads()
+        .then(setNativeGamepads)
+        .catch(() => setNativeGamepads([]));
     }
-  }, [refreshBootstrap, clientResolution.client]);
+  }, [refreshBootstrap, refreshInstalledThemes, clientResolution.client]);
 
   useEffect(() => {
     let cleanup: (() => void) | null = null;
@@ -198,6 +251,8 @@ export function App() {
           setRecentUnlockedToast(unlocked);
         }
       },
+      onGamepadDevices: (devices) => setNativeGamepads(devices),
+      onGamepadAction: (evt) => setLastNativeGamepadAction(evt),
     }).then((unlisten) => {
       cleanup = unlisten;
     });
@@ -480,173 +535,368 @@ export function App() {
   };
 
   return (
-    <AppShell
-      activeSection={section}
-      onSelectSection={handleSelectSection}
-      profileDisplayName={bootstrap.profile.displayName}
-      profileHandle={bootstrap.profile.handle}
-      transportKind={client.transportKind}
+    <InputProvider
+      settings={bootstrap.settings}
+      suspended={activeSession.phase !== 'idle'}
+      nativeGamepads={nativeGamepads}
+      lastNativeAction={lastNativeGamepadAction}
+      onUpdateSetting={handleUpdateSetting}
+      onNavigateBack={handleNavigateBack}
+      onCycleSection={handleCycleSection}
     >
-      <ActiveSessionBanner session={activeSession} onStopSession={handleStopActiveSession} />
+      <AppThemedWorkspace
+        bootstrap={bootstrap}
+        client={client}
+        section={section}
+        selectedConsoleSlug={selectedConsoleSlug}
+        consoleEnv={consoleEnv}
+        consoleProfile={consoleProfile}
+        consoleTrophyOverview={consoleTrophyOverview}
+        effectiveTrophyOverview={effectiveTrophyOverview}
+        recentUnlockedToast={recentUnlockedToast}
+        setRecentUnlockedToast={setRecentUnlockedToast}
+        selectedGameDetails={selectedGameDetails}
+        setSelectedGameDetails={setSelectedGameDetails}
+        selectedGameTrophies={selectedGameTrophies}
+        setSelectedGameTrophies={setSelectedGameTrophies}
+        activeSession={activeSession}
+        statsOverview={statsOverview}
+        activityItems={activityItems}
+        backups={backups}
+        installedThemes={installedThemes}
+        rpcs3Ready={rpcs3Ready}
+        onSelectSection={handleSelectSection}
+        onOpenConsoleEnvironment={(slug) => void openConsoleEnvironment(slug)}
+        onCloseConsoleEnvironment={() => {
+          setSelectedConsoleSlug(null);
+          setConsoleEnv(null);
+          setConsoleProfile(null);
+          setConsoleTrophyOverview(null);
+        }}
+        onOpenGame={(gameId) => void openGameDetails(gameId)}
+        onToggleFavorite={handleToggleFavorite}
+        onUpdateGameMetadata={handleUpdateGameMetadata}
+        onSetGameCover={handleSetGameCover}
+        onAddScanPath={handleAddScanPath}
+        onRemoveScanPath={handleRemoveScanPath}
+        onScanLibrary={handleScanLibrary}
+        onUpdateConsoleSetting={handleUpdateConsoleSetting}
+        onSyncConsoleProfile={handleSyncConsoleProfile}
+        onSyncConsoleTrophies={handleSyncConsoleTrophies}
+        onLaunchConsoleSystem={handleLaunchConsoleSystem}
+        onLaunchGame={handleLaunchGame}
+        onStopActiveSession={handleStopActiveSession}
+        onRecordRuntimeVerification={handleRecordRuntimeVerification}
+        onUpdateProfile={handleUpdateProfile}
+        onConfigureEmulator={handleConfigureEmulator}
+        onInspectRpcs3={handleInspectRpcs3}
+        onRegisterFirmware={handleRegisterFirmware}
+        onUpdateSetting={handleUpdateSetting}
+        onCreateBackup={handleCreateBackup}
+        onInspectBackup={handleInspectBackup}
+        onRestoreBackup={handleRestoreBackup}
+        onRefreshInstalledThemes={refreshInstalledThemes}
+      />
+    </InputProvider>
+  );
+}
 
-      {recentUnlockedToast.length > 0 ? (
-        <div
-          className={trophyStyles.toastBanner}
-          role="status"
-          aria-live="polite"
-          aria-label="Novos troféus desbloqueados"
-        >
-          <div>
-            <strong>
-              {recentUnlockedToast.length === 1 && recentUnlockedToast[0]
-                ? `Novo troféu desbloqueado: ${recentUnlockedToast[0].name}`
-                : `${recentUnlockedToast.length} novos troféus desbloqueados`}
-            </strong>
-            <div className={pageStyles.muted}>
-              {recentUnlockedToast.map((t) => `${t.gameTitle} — ${t.name}`).join(' · ')}
+interface AppThemedWorkspaceProps {
+  bootstrap: HubBootstrapDto;
+  client: HubApiClient;
+  section: HubSectionId;
+  selectedConsoleSlug: string | null;
+  consoleEnv: ConsoleEnvironmentDto | null;
+  consoleProfile: ConsoleProfileOverviewDto | null;
+  consoleTrophyOverview: TrophyCenterOverviewDto | null;
+  effectiveTrophyOverview: TrophyCenterOverviewDto;
+  recentUnlockedToast: NewlyUnlockedTrophy[];
+  setRecentUnlockedToast: (next: NewlyUnlockedTrophy[]) => void;
+  selectedGameDetails: GameDetailsDto | null;
+  setSelectedGameDetails: (next: GameDetailsDto | null) => void;
+  selectedGameTrophies: DetailedTrophyRow[];
+  setSelectedGameTrophies: (next: DetailedTrophyRow[]) => void;
+  activeSession: ActiveSessionSnapshot;
+  statsOverview: StatisticsOverview | null;
+  activityItems: ActivityEntryDto[];
+  backups: BackupFileEntry[];
+  installedThemes: InstalledThemePackage[];
+  rpcs3Ready: boolean;
+  onSelectSection: (section: HubSectionId) => void;
+  onOpenConsoleEnvironment: (slug: string) => void;
+  onCloseConsoleEnvironment: () => void;
+  onOpenGame: (gameId: string) => void;
+  onToggleFavorite: (gameId: string) => Promise<void>;
+  onUpdateGameMetadata: (req: UpdateGameMetadataRequest) => Promise<void>;
+  onSetGameCover: (gameId: string, path: string) => Promise<void>;
+  onAddScanPath: (slug: string, dir: string, rec: boolean) => Promise<void>;
+  onRemoveScanPath: (pathId: string) => Promise<void>;
+  onScanLibrary: (
+    slug: string,
+    onProgress?: (evt: ScanProgressEvent) => void
+  ) => Promise<import('./types/domain').ScanSummaryDto>;
+  onUpdateConsoleSetting: (slug: string, key: string, value: string) => Promise<void>;
+  onSyncConsoleProfile: (slug: string) => Promise<import('./types/domain').ConsoleSyncReport>;
+  onSyncConsoleTrophies: (slug: string) => Promise<import('./types/domain').TrophySyncReport>;
+  onLaunchConsoleSystem: (slug: string) => Promise<void>;
+  onLaunchGame: (gameId: string, versionId?: string | null) => Promise<void>;
+  onStopActiveSession: () => Promise<void>;
+  onRecordRuntimeVerification: (req: RecordRuntimeVerificationRequest) => Promise<void>;
+  onUpdateProfile: (req: UpdateProfileRequest) => Promise<void>;
+  onConfigureEmulator: (slug: string, exePath: string) => Promise<void>;
+  onInspectRpcs3: () => Promise<void>;
+  onRegisterFirmware: (consoleSlug: string, emuSlug: string, filePath: string) => Promise<void>;
+  onUpdateSetting: (key: string, value: string) => Promise<void>;
+  onCreateBackup: () => Promise<import('./types/domain').BackupReport>;
+  onInspectBackup: (path: string) => Promise<import('./types/domain').BackupInspectionReport>;
+  onRestoreBackup: (path: string) => Promise<import('./types/domain').LiveRestoreReport>;
+  onRefreshInstalledThemes: () => Promise<void>;
+}
+
+function AppThemedWorkspace(props: AppThemedWorkspaceProps) {
+  const { displayMode, quickMenuOpen, setQuickMenuOpen } = useInput();
+  const {
+    bootstrap,
+    client,
+    section,
+    selectedConsoleSlug,
+    consoleEnv,
+    consoleProfile,
+    consoleTrophyOverview,
+    effectiveTrophyOverview,
+    recentUnlockedToast,
+    setRecentUnlockedToast,
+    selectedGameDetails,
+    setSelectedGameDetails,
+    selectedGameTrophies,
+    setSelectedGameTrophies,
+    activeSession,
+    statsOverview,
+    activityItems,
+    backups,
+    installedThemes,
+    rpcs3Ready,
+    onSelectSection,
+    onOpenConsoleEnvironment,
+    onCloseConsoleEnvironment,
+    onOpenGame,
+    onToggleFavorite,
+    onUpdateGameMetadata,
+    onSetGameCover,
+    onAddScanPath,
+    onRemoveScanPath,
+    onScanLibrary,
+    onUpdateConsoleSetting,
+    onSyncConsoleProfile,
+    onSyncConsoleTrophies,
+    onLaunchConsoleSystem,
+    onLaunchGame,
+    onStopActiveSession,
+    onRecordRuntimeVerification,
+    onUpdateProfile,
+    onConfigureEmulator,
+    onInspectRpcs3,
+    onRegisterFirmware,
+    onUpdateSetting,
+    onCreateBackup,
+    onInspectBackup,
+    onRestoreBackup,
+    onRefreshInstalledThemes,
+  } = props;
+
+  return (
+    <ThemeProvider
+      settings={bootstrap.settings}
+      displayMode={displayMode}
+      installedPackages={installedThemes}
+      onUpdateSetting={onUpdateSetting}
+      onImportThemePackage={(src) => client.importThemePackage(src)}
+      onRemoveInstalledTheme={(id) => client.removeInstalledTheme(id)}
+      onRefreshInstalledThemes={onRefreshInstalledThemes}
+    >
+      <AppShell
+        activeSection={section}
+        onSelectSection={onSelectSection}
+        profileDisplayName={bootstrap.profile.displayName}
+        profileHandle={bootstrap.profile.handle}
+        transportKind={client.transportKind}
+      >
+        <ActiveSessionBanner
+          session={activeSession}
+          playerName={bootstrap.profile.displayName}
+          onStopSession={onStopActiveSession}
+        />
+
+        {recentUnlockedToast.length > 0 ? (
+          <div
+            className={trophyStyles.toastBanner}
+            role="status"
+            aria-live="polite"
+            aria-label="Novos troféus desbloqueados"
+          >
+            <div>
+              <strong>
+                {recentUnlockedToast.length === 1 && recentUnlockedToast[0]
+                  ? `Novo troféu desbloqueado: ${recentUnlockedToast[0].name}`
+                  : `${recentUnlockedToast.length} novos troféus desbloqueados`}
+              </strong>
+              <div className={pageStyles.muted}>
+                {recentUnlockedToast.map((t) => `${t.gameTitle} — ${t.name}`).join(' · ')}
+              </div>
+            </div>
+            <div className={pageStyles.actionsRow}>
+              <button
+                type="button"
+                className={pageStyles.btnSecondary}
+                onClick={() => {
+                  setRecentUnlockedToast([]);
+                  onSelectSection('trophies');
+                }}
+              >
+                Ver Troféus
+              </button>
+              <button
+                type="button"
+                className={pageStyles.btnSecondary}
+                onClick={() => setRecentUnlockedToast([])}
+              >
+                Fechar
+              </button>
             </div>
           </div>
-          <div className={pageStyles.actionsRow}>
-            <button
-              type="button"
-              className={pageStyles.btnSecondary}
-              onClick={() => {
-                setRecentUnlockedToast([]);
-                handleSelectSection('trophies');
-              }}
-            >
-              Ver Troféus
-            </button>
-            <button
-              type="button"
-              className={pageStyles.btnSecondary}
-              onClick={() => setRecentUnlockedToast([])}
-            >
-              Fechar
-            </button>
-          </div>
-        </div>
-      ) : null}
+        ) : null}
 
-      {selectedGameDetails ? (
-        <GameDetailsPage
-          details={selectedGameDetails}
-          trophies={selectedGameTrophies}
-          canLaunch={selectedGameDetails.game.consoleSlug === 'ps3' && rpcs3Ready}
-          activeSession={activeSession}
-          onBack={() => {
-            setSelectedGameDetails(null);
-            setSelectedGameTrophies([]);
-          }}
-          onToggleFavorite={handleToggleFavorite}
-          onUpdateMetadata={handleUpdateGameMetadata}
-          onSetCover={handleSetGameCover}
-          onLaunchGame={handleLaunchGame}
-        />
-      ) : null}
+        {selectedGameDetails ? (
+          <GameDetailsPage
+            details={selectedGameDetails}
+            trophies={selectedGameTrophies}
+            canLaunch={selectedGameDetails.game.consoleSlug === 'ps3' && rpcs3Ready}
+            activeSession={activeSession}
+            onBack={() => {
+              setSelectedGameDetails(null);
+              setSelectedGameTrophies([]);
+            }}
+            onToggleFavorite={onToggleFavorite}
+            onUpdateMetadata={onUpdateGameMetadata}
+            onSetCover={onSetGameCover}
+            onLaunchGame={onLaunchGame}
+          />
+        ) : null}
 
-      {!selectedGameDetails && section === 'home' ? (
-        <HomePage
-          data={bootstrap}
-          onNavigate={handleSelectSection}
-          onSelectConsole={(slug) => void openConsoleEnvironment(slug)}
-        />
-      ) : null}
+        {!selectedGameDetails && section === 'home' ? (
+          <HomePage
+            data={bootstrap}
+            onNavigate={onSelectSection}
+            onSelectConsole={onOpenConsoleEnvironment}
+          />
+        ) : null}
 
-      {!selectedGameDetails && section === 'consoles' && !selectedConsoleSlug ? (
-        <ConsolesPage
-          consoles={bootstrap.consoles}
-          emulators={bootstrap.emulators}
-          onSelectConsole={(slug) => void openConsoleEnvironment(slug)}
-        />
-      ) : null}
+        {!selectedGameDetails && section === 'consoles' && !selectedConsoleSlug ? (
+          <ConsolesPage
+            consoles={bootstrap.consoles}
+            emulators={bootstrap.emulators}
+            onSelectConsole={onOpenConsoleEnvironment}
+          />
+        ) : null}
 
-      {!selectedGameDetails && section === 'consoles' && selectedConsoleSlug && consoleEnv ? (
-        <ConsoleEnvironmentPage
-          environment={consoleEnv}
-          consoleProfile={consoleProfile}
-          consoleTrophyOverview={consoleTrophyOverview}
-          activeSession={activeSession}
-          onBack={() => {
-            setSelectedConsoleSlug(null);
-            setConsoleEnv(null);
-            setConsoleProfile(null);
-            setConsoleTrophyOverview(null);
-          }}
-          onOpenEmulators={() => handleSelectSection('emulators')}
-          onOpenTrophies={() => handleSelectSection('trophies')}
-          onOpenGame={(gameId) => void openGameDetails(gameId)}
-          onToggleFavorite={handleToggleFavorite}
-          onAddScanPath={handleAddScanPath}
-          onRemoveScanPath={handleRemoveScanPath}
-          onScanLibrary={handleScanLibrary}
-          onUpdateConsoleSetting={handleUpdateConsoleSetting}
-          onSyncProfile={handleSyncConsoleProfile}
-          onSyncConsoleTrophies={handleSyncConsoleTrophies}
-          onLaunchSystem={handleLaunchConsoleSystem}
-          onLaunchGame={handleLaunchGame}
-          onRecordVerification={handleRecordRuntimeVerification}
-        />
-      ) : null}
+        {!selectedGameDetails && section === 'consoles' && selectedConsoleSlug && consoleEnv ? (
+          <ConsoleEnvironmentPage
+            environment={consoleEnv}
+            consoleProfile={consoleProfile}
+            consoleTrophyOverview={consoleTrophyOverview}
+            activeSession={activeSession}
+            onBack={onCloseConsoleEnvironment}
+            onOpenEmulators={() => onSelectSection('emulators')}
+            onOpenTrophies={() => onSelectSection('trophies')}
+            onOpenGame={onOpenGame}
+            onToggleFavorite={onToggleFavorite}
+            onAddScanPath={onAddScanPath}
+            onRemoveScanPath={onRemoveScanPath}
+            onScanLibrary={onScanLibrary}
+            onUpdateConsoleSetting={onUpdateConsoleSetting}
+            onSyncProfile={onSyncConsoleProfile}
+            onSyncConsoleTrophies={onSyncConsoleTrophies}
+            onLaunchSystem={onLaunchConsoleSystem}
+            onLaunchGame={onLaunchGame}
+            onRecordVerification={onRecordRuntimeVerification}
+          />
+        ) : null}
 
-      {!selectedGameDetails && section === 'library' ? (
-        <LibraryPage
-          consoles={bootstrap.consoles}
-          games={bootstrap.games}
-          rpcs3Ready={rpcs3Ready}
-          activeSession={activeSession}
-          onToggleFavorite={handleToggleFavorite}
-          onOpenGame={(gameId) => void openGameDetails(gameId)}
-          onSelectConsole={(slug) => void openConsoleEnvironment(slug)}
-          onLaunchGame={(gameId) => handleLaunchGame(gameId, null)}
-        />
-      ) : null}
+        {!selectedGameDetails && section === 'library' ? (
+          <LibraryPage
+            consoles={bootstrap.consoles}
+            games={bootstrap.games}
+            rpcs3Ready={rpcs3Ready}
+            activeSession={activeSession}
+            onToggleFavorite={onToggleFavorite}
+            onOpenGame={onOpenGame}
+            onSelectConsole={onOpenConsoleEnvironment}
+            onLaunchGame={(gameId) => onLaunchGame(gameId, null)}
+          />
+        ) : null}
 
-      {!selectedGameDetails && section === 'profile' ? (
-        <ProfilePage
-          profile={bootstrap.profile}
-          statistics={bootstrap.statistics}
-          onUpdateProfile={handleUpdateProfile}
-        />
-      ) : null}
+        {!selectedGameDetails && section === 'profile' ? (
+          <ProfilePage
+            profile={bootstrap.profile}
+            statistics={bootstrap.statistics}
+            onUpdateProfile={onUpdateProfile}
+          />
+        ) : null}
 
-      {!selectedGameDetails && section === 'statistics' && statsOverview ? (
-        <StatisticsPage
-          overview={statsOverview}
-          activity={activityItems}
-          onFilterActivity={(eventType) => client.listActivityHistory(eventType, 100)}
-        />
-      ) : null}
+        {!selectedGameDetails && section === 'statistics' && statsOverview ? (
+          <StatisticsPage
+            overview={statsOverview}
+            activity={activityItems}
+            onFilterActivity={(eventType) => client.listActivityHistory(eventType, 100)}
+          />
+        ) : null}
 
-      {!selectedGameDetails && section === 'trophies' ? (
-        <TrophiesPage
-          overview={effectiveTrophyOverview}
-          onSyncConsoleTrophies={handleSyncConsoleTrophies}
-          onOpenGame={(gameId) => void openGameDetails(gameId)}
-        />
-      ) : null}
+        {!selectedGameDetails && section === 'trophies' ? (
+          <TrophiesPage
+            overview={effectiveTrophyOverview}
+            onSyncConsoleTrophies={onSyncConsoleTrophies}
+            onOpenGame={onOpenGame}
+          />
+        ) : null}
 
-      {!selectedGameDetails && section === 'emulators' ? (
-        <EmulatorsPage
-          emulators={bootstrap.emulators}
-          firmwareRecords={bootstrap.firmwareRecords}
-          rpcs3Inspection={bootstrap.rpcs3Inspection}
-          onConfigureEmulator={handleConfigureEmulator}
-          onInspectRpcs3={handleInspectRpcs3}
-          onRegisterFirmware={handleRegisterFirmware}
-        />
-      ) : null}
+        {!selectedGameDetails && section === 'themes' ? (
+          <section className={pageStyles.section}>
+            <h1 className={pageStyles.title}>Gerenciador de Temas</h1>
+            <p className={pageStyles.muted}>Carregando galeria de temas...</p>
+          </section>
+        ) : null}
 
-      {!selectedGameDetails && section === 'settings' ? (
-        <SettingsPage
-          settings={bootstrap.settings}
-          backups={backups}
-          onUpdateSetting={handleUpdateSetting}
-          onCreateBackup={handleCreateBackup}
-          onInspectBackup={handleInspectBackup}
-          onRestoreBackup={handleRestoreBackup}
-        />
-      ) : null}
-    </AppShell>
+        {!selectedGameDetails && section === 'emulators' ? (
+          <EmulatorsPage
+            emulators={bootstrap.emulators}
+            firmwareRecords={bootstrap.firmwareRecords}
+            rpcs3Inspection={bootstrap.rpcs3Inspection}
+            onConfigureEmulator={onConfigureEmulator}
+            onInspectRpcs3={onInspectRpcs3}
+            onRegisterFirmware={onRegisterFirmware}
+          />
+        ) : null}
+
+        {!selectedGameDetails && section === 'settings' ? (
+          <SettingsPage
+            settings={bootstrap.settings}
+            backups={backups}
+            onUpdateSetting={onUpdateSetting}
+            onCreateBackup={onCreateBackup}
+            onInspectBackup={onInspectBackup}
+            onRestoreBackup={onRestoreBackup}
+          />
+        ) : null}
+      </AppShell>
+
+      <QuickMenuModal
+        open={quickMenuOpen}
+        activeSection={section}
+        activeSession={activeSession}
+        onSelectSection={onSelectSection}
+        onStopSession={onStopActiveSession}
+        onClose={() => setQuickMenuOpen(false)}
+      />
+    </ThemeProvider>
   );
 }

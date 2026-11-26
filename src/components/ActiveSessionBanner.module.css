@@ -3,39 +3,63 @@
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
-  margin-bottom: var(--space-4);
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
   border-radius: var(--radius-md);
-  border: 1px solid rgba(59, 130, 246, 0.5);
-  background: linear-gradient(90deg, rgba(30, 58, 138, 0.35), rgba(15, 23, 42, 0.85));
+  border: 1px solid var(--accent-primary);
+  background: var(--bg-surface-raised);
+  box-shadow: inset 4px 0 0 var(--accent-primary);
 }
 
 .sessionInfo {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 6px;
+  min-width: 0;
 }
 
 .sessionTitleRow {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
-  font-weight: 600;
+  font-family: var(--font-display);
+  font-size: var(--text-base);
+  font-weight: 700;
   color: var(--text-primary);
 }
 
 .liveDot {
-  width: 9px;
-  height: 9px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
-  background: #22c55e;
-  box-shadow: 0 0 8px rgba(34, 197, 94, 0.7);
+  background: var(--status-ok);
+  box-shadow: 0 0 8px rgba(34, 197, 94, 0.75);
 }
 
-.sessionMeta {
+.telemetryRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
   font-size: var(--text-xs);
   color: var(--text-secondary);
+}
+
+.telemetryChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--bg-canvas);
+  border: 1px solid var(--border-subtle);
+  font-family: var(--font-mono);
+}
+
+.sessionActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
 }
 
 .stopBtn {
@@ -43,7 +67,7 @@
   color: #fecaca;
   border: 1px solid rgba(239, 68, 68, 0.55);
   border-radius: var(--radius-sm);
-  padding: 8px 14px;
+  padding: 10px 16px;
   font-size: var(--text-sm);
   font-weight: 600;
   cursor: pointer;
@@ -61,7 +85,7 @@
 .originBadge {
   display: inline-flex;
   align-items: center;
-  padding: 2px 7px;
+  padding: 2px 8px;
   border-radius: 999px;
   font-size: 11px;
   font-weight: 600;

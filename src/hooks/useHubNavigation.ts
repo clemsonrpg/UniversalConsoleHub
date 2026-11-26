@@ -18,8 +18,8 @@ export const HUB_SECTIONS: HubSectionId[] = [
   'profile',
   'statistics',
   'trophies',
-  'emulators',
   'themes',
+  'emulators',
   'settings',
 ];
 
