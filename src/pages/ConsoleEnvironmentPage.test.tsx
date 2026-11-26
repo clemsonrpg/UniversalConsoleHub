@@ -1,6 +1,10 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import type { ConsoleEnvironmentDto, ScanSummaryDto } from '../types/domain';
+import type {
+  ConsoleEnvironmentDto,
+  ConsoleProfileOverviewDto,
+  ScanSummaryDto,
+} from '../types/domain';
 import { ConsoleEnvironmentPage } from './ConsoleEnvironmentPage';
 
 function makePs3Env(): ConsoleEnvironmentDto {
@@ -161,8 +165,9 @@ describe('ConsoleEnvironmentPage (independent console experience)', () => {
 
     expect(screen.getByRole('heading', { name: 'PlayStation 3' })).toBeInTheDocument();
     expect(screen.getByText("Demon's Souls")).toBeInTheDocument();
+    // When onLaunchSystem is omitted or vsh.self is not ready, XMB launch cannot fire
     expect(
-      screen.queryByRole('button', { name: /Iniciar Sistema Original|Iniciar XMB/i })
+      screen.queryByRole('button', { name: /Iniciar Sistema Original|Iniciar PS3 XMB/i })
     ).not.toBeInTheDocument();
     expect(
       screen.queryByText(/Este não é o dashboard original do console/i)
@@ -203,5 +208,155 @@ describe('ConsoleEnvironmentPage (independent console experience)', () => {
     expect(
       screen.getByText(/Ambiente Integrado do Hub — Este não é o dashboard original do console/i)
     ).toBeInTheDocument();
+  });
+
+  it('renders real PS3 profile provenance, local users, XMB launch when ready, and direct game play', async () => {
+    const readyEnv = makePs3Env();
+    readyEnv.rpcs3Inspection = {
+      configured: true,
+      installation: {
+        emulatorSlug: 'rpcs3',
+        executablePath: 'D:\\RPCS3\\rpcs3.exe',
+        rootDir: 'D:\\RPCS3',
+        detectedVersion: 'RPCS3 v0.0.34',
+        isValid: true,
+        issues: [],
+      },
+      readiness: {
+        firmwarePackageValidated: true,
+        firmwareSha256: 'abc123',
+        systemFilesPresent: true,
+        commandBuildable: true,
+        xmbRuntimeConfirmed: false,
+        generatedCommand: {
+          executable: 'D:\\RPCS3\\rpcs3.exe',
+          args: ['--no-gui', 'D:\\RPCS3\\dev_flash\\vsh\\module\\vsh.self'],
+          workingDir: 'D:\\RPCS3',
+        },
+        notes: [],
+      },
+      diagnostic: 'Pronto para iniciar PS3 XMB.',
+    };
+
+    const profileOverview: ConsoleProfileOverviewDto = {
+      consoleSlug: 'ps3',
+      consoleName: 'PlayStation 3',
+      environmentMode: 'authentic_system_capable',
+      profile: {
+        id: 'cp-1',
+        consoleId: 'console-ps3',
+        consoleSlug: 'ps3',
+        emulatorId: 'emu-rpcs3',
+        emulatorSlug: 'rpcs3',
+        emulatorStatus: 'available',
+        detectedEmulatorVersion: 'RPCS3 v0.0.34',
+        detectedFirmwareVersion: '4.91',
+        emulatorRootDir: 'D:\\RPCS3',
+        nativeSaveCount: 5,
+        nativeTrophyDirPresent: true,
+        trophySyncReadiness: 'phase4_planned',
+        nativeMetadataJson: '{}',
+        syncStatus: 'synced',
+        syncDiagnostics: '',
+        lastSyncedAt: '2026-11-25T22:00:00Z',
+        updatedAt: '2026-11-25T22:00:00Z',
+      },
+      localUsers: [
+        {
+          id: 'clu-1',
+          consoleId: 'console-ps3',
+          consoleSlug: 'ps3',
+          nativeUserKey: '00000001',
+          displayName: 'ClemsonPS3',
+          sourcePath: 'D:\\RPCS3\\dev_hdd0\\home\\00000001',
+          availabilityStatus: 'available',
+          linkedProfileId: 'profile-default',
+          firstDetectedAt: '2026-11-25T21:00:00Z',
+          lastSeenAt: '2026-11-25T22:00:00Z',
+        },
+      ],
+      emulatorStatus: { value: 'available', origin: 'native_platform', notes: null },
+      emulatorVersion: { value: 'RPCS3 v0.0.34', origin: 'native_platform', notes: null },
+      firmwareVersion: { value: '4.91', origin: 'native_platform', notes: null },
+      emulatorRootDir: { value: 'D:\\RPCS3', origin: 'native_platform', notes: null },
+      nativeSaveCount: { value: 5, origin: 'native_platform', notes: null },
+      trophyReadiness: {
+        value: 'phase4_planned',
+        origin: 'native_platform',
+        notes: 'Leitura real de troféus planejada para a Fase 4.',
+      },
+      hubStats: {
+        totalPlaytimeSeconds: 3600,
+        totalSessions: 2,
+        gamesTotal: 1,
+        gamesAvailable: 1,
+        gamesMissingOnDisk: 0,
+        mostPlayed: [],
+        recentlyPlayed: [],
+      },
+      recentSessions: [],
+    };
+
+    const onLaunchSystem = vi.fn().mockResolvedValue(undefined);
+    const onLaunchGame = vi.fn().mockResolvedValue(undefined);
+    const onSyncProfile = vi.fn().mockResolvedValue({
+      consoleSlug: 'ps3',
+      trigger: 'manual',
+      syncStatus: 'synced',
+      emulatorStatus: 'available',
+      localUsersDetected: 1,
+      localUsersMarkedMissing: 0,
+      gamesDiscovered: 0,
+      versionsAvailable: 1,
+      versionsMarkedMissing: 0,
+      coversImported: 0,
+      diagnostics: [],
+      syncedAt: '2026-11-25T22:10:00Z',
+    });
+
+    render(
+      <ConsoleEnvironmentPage
+        environment={readyEnv}
+        consoleProfile={profileOverview}
+        onBack={() => {}}
+        onOpenEmulators={() => {}}
+        onOpenGame={() => {}}
+        onToggleFavorite={async () => {}}
+        onAddScanPath={async () => {}}
+        onRemoveScanPath={async () => {}}
+        onScanLibrary={async () => ({
+          consoleSlug: 'ps3',
+          scannedDirectories: 0,
+          scannedFiles: 0,
+          gamesAdded: 0,
+          versionsAdded: 0,
+          skippedExisting: 0,
+          errors: [],
+        })}
+        onUpdateConsoleSetting={async () => {}}
+        onSyncProfile={onSyncProfile}
+        onLaunchSystem={onLaunchSystem}
+        onLaunchGame={onLaunchGame}
+      />
+    );
+
+    // Real firmware & native/hub separation visible in profile summary
+    expect(screen.getByText('4.91')).toBeInTheDocument();
+    expect(screen.getByText(/5 diretório\(s\)/i)).toBeInTheDocument();
+
+    // Launch XMB & Direct Game Boot wired cleanly
+    fireEvent.click(screen.getByRole('button', { name: /Iniciar PS3 XMB/i }));
+    await waitFor(() => expect(onLaunchSystem).toHaveBeenCalledWith('ps3'));
+
+    fireEvent.click(screen.getByRole('button', { name: /^Jogar$/i }));
+    await waitFor(() => expect(onLaunchGame).toHaveBeenCalledWith('game-ps3-1', null));
+
+    fireEvent.click(screen.getByRole('button', { name: /Sincronizar Agora/i }));
+    await waitFor(() => expect(onSyncProfile).toHaveBeenCalledWith('ps3'));
+
+    // Real local users live cleanly in dedicated tab separated from console identity
+    fireEvent.click(screen.getByRole('tab', { name: /Perfil & Usuários Locais/i }));
+    expect(screen.getByText('ClemsonPS3')).toBeInTheDocument();
+    expect(screen.getByText(/\(00000001\)/)).toBeInTheDocument();
   });
 });

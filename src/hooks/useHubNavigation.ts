@@ -23,9 +23,11 @@ export const HUB_SECTIONS: HubSectionId[] = [
 
 export function useHubNavigation(
   activeSection: HubSectionId,
-  onSelect: (section: HubSectionId) => void
+  onSelect: (section: HubSectionId) => void,
+  disabled = false
 ) {
   useEffect(() => {
+    if (disabled) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (!event.altKey) return;
       const idx = HUB_SECTIONS.indexOf(activeSection);
@@ -41,5 +43,5 @@ export function useHubNavigation(
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [activeSection, onSelect]);
+  }, [activeSection, onSelect, disabled]);
 }

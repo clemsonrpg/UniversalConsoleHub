@@ -1,8 +1,11 @@
 import type {
+  DataOrigin,
+  EmulatorStatus,
   FeatureKey,
   RuntimeVerificationFeature,
   RuntimeVerificationStatus,
   TrophyOrigin,
+  TrophySyncReadiness,
   VerificationLevel,
 } from '../types/domain';
 
@@ -77,6 +80,8 @@ const METADATA_SOURCE_LABELS: Record<string, string> = {
 const SESSION_EXIT_LABELS: Record<string, string> = {
   running: 'Em andamento',
   clean_exit: 'Encerrada normalmente',
+  non_zero_exit: 'Encerrada com erro',
+  user_stopped: 'Encerrada pelo usuário',
   recovered_after_crash: 'Recuperada após queda',
   launch_failed: 'Falha ao iniciar',
 };
@@ -86,8 +91,40 @@ const ACTIVITY_EVENT_LABELS: Record<string, string> = {
   game_registered: 'Jogo registrado',
   game_metadata_updated: 'Metadados atualizados',
   library_scanned: 'Biblioteca escaneada',
+  console_profile_synced: 'Perfil do console sincronizado',
   session_completed: 'Sessão encerrada',
   session_recovered: 'Sessão recuperada',
+};
+
+const DATA_ORIGIN_LABELS: Record<DataOrigin, string> = {
+  native_platform: 'Nativo',
+  hub_recorded: 'Hub',
+  unavailable: 'Indisponível',
+};
+
+const EMULATOR_STATUS_LABELS: Record<EmulatorStatus, string> = {
+  unconfigured: 'Não configurado',
+  available: 'Disponível',
+  missing_on_disk: 'Ausente no disco',
+};
+
+const TROPHY_READINESS_LABELS: Record<TrophySyncReadiness, string> = {
+  unavailable: 'Sem sistema nativo',
+  phase4_planned: 'Planejado · Fase 4',
+  ready: 'Pronto',
+};
+
+const SYNC_STATUS_LABELS: Record<string, string> = {
+  never_synced: 'Nunca sincronizado',
+  synced: 'Sincronizado',
+  partial: 'Sincronização parcial',
+  error: 'Erro na sincronização',
+};
+
+const INSTALL_STATE_LABELS: Record<string, string> = {
+  installed: 'Disponível no disco',
+  registered: 'Disponível no disco',
+  missing_files: 'Ausente no disco',
 };
 
 function fallbackHumanize(raw: string): string {
@@ -138,6 +175,26 @@ export function formatSessionExitStatus(raw: string): string {
 
 export function formatActivityEventType(raw: string): string {
   return ACTIVITY_EVENT_LABELS[raw] ?? fallbackHumanize(raw);
+}
+
+export function formatDataOrigin(origin: DataOrigin): string {
+  return DATA_ORIGIN_LABELS[origin] ?? fallbackHumanize(origin);
+}
+
+export function formatEmulatorStatus(status: EmulatorStatus): string {
+  return EMULATOR_STATUS_LABELS[status] ?? fallbackHumanize(status);
+}
+
+export function formatTrophyReadiness(readiness: TrophySyncReadiness): string {
+  return TROPHY_READINESS_LABELS[readiness] ?? fallbackHumanize(readiness);
+}
+
+export function formatSyncStatus(status: string): string {
+  return SYNC_STATUS_LABELS[status] ?? fallbackHumanize(status);
+}
+
+export function formatGameAvailability(installState: string): string {
+  return INSTALL_STATE_LABELS[installState] ?? fallbackHumanize(installState);
 }
 
 export function formatPlaytime(totalSeconds: number): string {

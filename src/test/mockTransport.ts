@@ -1,12 +1,15 @@
 import type { HubTransport } from '../api/tauriClient';
 import type {
+  ActiveSessionSnapshot,
   BackupFileEntry,
   BackupInspectionReport,
   BackupReport,
   ConsoleDetailsDto,
   ConsoleEnvironmentDto,
+  ConsoleProfileOverviewDto,
   ConsoleScanPath,
   ConsoleSetting,
+  ConsoleSyncReport,
   FirmwareRecordDto,
   GameDetailsDto,
   GameRecord,
@@ -14,7 +17,9 @@ import type {
   HubBootstrapDto,
   LiveRestoreReport,
   PlayerProfile,
+  RecordRuntimeVerificationRequest,
   RegisterGameRequest,
+  RuntimeVerificationRecord,
   ScanProgressEvent,
   ScanSummaryDto,
   StatisticsOverview,
@@ -602,6 +607,227 @@ export function createStatefulTestTransport(): HubTransport {
             snapshot: structuredClone(state),
           });
           return report as T;
+        }
+        case 'get_console_profile': {
+          const consoleSlug = String(args?.consoleSlug ?? 'ps3');
+          const found = state.consoles.find((c) => c.slug === consoleSlug);
+          if (!found) throw new Error(`Console '${consoleSlug}' não encontrado`);
+          const isPs3 = consoleSlug === 'ps3';
+          const rpcs3Ready = Boolean(isPs3 && state.rpcs3Inspection.configured);
+          const consoleGames = state.games.filter((g) => g.consoleSlug === consoleSlug);
+          const availableGames = consoleGames.filter((g) => g.installState !== 'missing_files');
+          const overview: ConsoleProfileOverviewDto = {
+            consoleSlug,
+            consoleName: found.name,
+            environmentMode:
+              found.capabilities.supportedStates.includes('FULL_SYSTEM_BOOT') &&
+              found.capabilities.supportedStates.includes('ORIGINAL_DASHBOARD')
+                ? 'authentic_system_capable'
+                : 'integrated_alternative_only',
+            profile: {
+              id: `cprof-${consoleSlug}`,
+              consoleId: found.id,
+              consoleSlug,
+              emulatorId: isPs3 ? 'emu-rpcs3' : null,
+              emulatorSlug: isPs3 ? 'rpcs3' : null,
+              emulatorStatus: rpcs3Ready ? 'available' : 'unconfigured',
+              detectedEmulatorVersion: rpcs3Ready ? 'RPCS3 v0.0.34-test' : null,
+              detectedFirmwareVersion: rpcs3Ready ? '4.91' : null,
+              emulatorRootDir: rpcs3Ready ? 'C:\\Emulators\\RPCS3' : null,
+              nativeSaveCount: rpcs3Ready ? 2 : 0,
+              nativeTrophyDirPresent: rpcs3Ready,
+              trophySyncReadiness: isPs3 ? 'phase4_planned' : 'unavailable',
+              nativeMetadataJson: '{}',
+              syncStatus: rpcs3Ready ? 'synced' : 'never_synced',
+              syncDiagnostics: '',
+              lastSyncedAt: rpcs3Ready ? '2026-11-25T22:15:00Z' : null,
+              updatedAt: '2026-11-25T22:15:00Z',
+            },
+            localUsers: rpcs3Ready
+              ? [
+                  {
+                    id: 'clu-1',
+                    consoleId: found.id,
+                    consoleSlug: 'ps3',
+                    nativeUserKey: '00000001',
+                    displayName: 'ClemsonPS3',
+                    sourcePath: 'C:\\Emulators\\RPCS3\\dev_hdd0\\home\\00000001',
+                    availabilityStatus: 'available',
+                    linkedProfileId: 'profile-default',
+                    firstDetectedAt: '2026-11-25T22:00:00Z',
+                    lastSeenAt: '2026-11-25T22:15:00Z',
+                  },
+                ]
+              : [],
+            emulatorStatus: rpcs3Ready
+              ? { value: 'available', origin: 'native_platform', notes: null }
+              : {
+                  value: null,
+                  origin: 'unavailable',
+                  notes: 'Emulador ainda não configurado para este console.',
+                },
+            emulatorVersion: rpcs3Ready
+              ? { value: 'RPCS3 v0.0.34-test', origin: 'native_platform', notes: null }
+              : {
+                  value: null,
+                  origin: 'unavailable',
+                  notes: 'Versão do emulador não detectada automaticamente.',
+                },
+            firmwareVersion: rpcs3Ready
+              ? { value: '4.91', origin: 'native_platform', notes: null }
+              : {
+                  value: null,
+                  origin: 'unavailable',
+                  notes: 'Firmware não detectado no diretório do emulador.',
+                },
+            emulatorRootDir: rpcs3Ready
+              ? { value: 'C:\\Emulators\\RPCS3', origin: 'native_platform', notes: null }
+              : { value: null, origin: 'unavailable', notes: 'Diretório não configurado.' },
+            nativeSaveCount: rpcs3Ready
+              ? { value: 2, origin: 'native_platform', notes: null }
+              : { value: null, origin: 'unavailable', notes: 'Sem saves nativos detectados.' },
+            trophyReadiness: isPs3
+              ? {
+                  value: 'phase4_planned',
+                  origin: 'native_platform',
+                  notes:
+                    'Diretório local de troféus detectado; leitura real de TROPCONF.SFM/TROPUSR.DAT planejada para a Fase 4.',
+                }
+              : {
+                  value: null,
+                  origin: 'unavailable',
+                  notes: 'Esta plataforma não possui sistema nativo de troféus.',
+                },
+            hubStats: {
+              totalPlaytimeSeconds: consoleGames.reduce((acc, g) => acc + g.totalPlaytimeSeconds, 0),
+              totalSessions: 0,
+              gamesTotal: consoleGames.length,
+              gamesAvailable: availableGames.length,
+              gamesMissingOnDisk: consoleGames.length - availableGames.length,
+              mostPlayed: [],
+              recentlyPlayed: [],
+            },
+            recentSessions: [],
+          };
+          return overview as T;
+        }
+        case 'sync_console_profile': {
+          const consoleSlug = String(args?.consoleSlug ?? 'ps3');
+          const isPs3 = consoleSlug === 'ps3';
+          const rpcs3Ready = Boolean(isPs3 && state.rpcs3Inspection.configured);
+          const consoleGames = state.games.filter((g) => g.consoleSlug === consoleSlug);
+          const report: ConsoleSyncReport = {
+            consoleSlug,
+            trigger: (args?.trigger as ConsoleSyncReport['trigger']) ?? 'manual',
+            syncStatus: 'synced',
+            emulatorStatus: rpcs3Ready ? 'available' : 'unconfigured',
+            localUsersDetected: rpcs3Ready ? 1 : 0,
+            localUsersMarkedMissing: 0,
+            gamesDiscovered: 0,
+            versionsAvailable: consoleGames.length,
+            versionsMarkedMissing: 0,
+            coversImported: 0,
+            diagnostics: [],
+            syncedAt: '2026-11-25T22:20:00Z',
+          };
+          return report as T;
+        }
+        case 'get_active_session': {
+          const snap: ActiveSessionSnapshot =
+            (state as unknown as { __activeSession?: ActiveSessionSnapshot }).__activeSession ?? {
+              phase: 'idle',
+              sessionId: null,
+              target: null,
+              consoleSlug: null,
+              gameId: null,
+              gameTitle: null,
+              emulatorSlug: null,
+              pid: null,
+              startedAt: null,
+              lastHeartbeatAt: null,
+              elapsedSeconds: 0,
+            };
+          return structuredClone(snap) as T;
+        }
+        case 'launch_console_system': {
+          const consoleSlug = String(args?.consoleSlug ?? 'ps3');
+          const snap: ActiveSessionSnapshot = {
+            phase: 'running',
+            sessionId: null,
+            target: { kind: 'system_boot', consoleSlug },
+            consoleSlug,
+            gameId: null,
+            gameTitle: 'Sistema Original do Console (XMB)',
+            emulatorSlug: 'rpcs3',
+            pid: 4242,
+            startedAt: '2026-11-25T22:25:00Z',
+            lastHeartbeatAt: '2026-11-25T22:25:00Z',
+            elapsedSeconds: 1,
+          };
+          (state as unknown as { __activeSession?: ActiveSessionSnapshot }).__activeSession = snap;
+          return structuredClone(snap) as T;
+        }
+        case 'launch_game': {
+          const gameId = String(args?.gameId ?? '');
+          const g = state.games.find((item) => item.id === gameId);
+          const snap: ActiveSessionSnapshot = {
+            phase: 'running',
+            sessionId: `sess-${Date.now()}`,
+            target: {
+              kind: 'direct_game_boot',
+              consoleSlug: g?.consoleSlug ?? 'ps3',
+              gameId,
+              gameVersionId: (args?.gameVersionId as string | null) ?? null,
+            },
+            consoleSlug: g?.consoleSlug ?? 'ps3',
+            gameId,
+            gameTitle: g?.title ?? 'Jogo PS3',
+            emulatorSlug: 'rpcs3',
+            pid: 4343,
+            startedAt: '2026-11-25T22:26:00Z',
+            lastHeartbeatAt: '2026-11-25T22:26:00Z',
+            elapsedSeconds: 1,
+          };
+          (state as unknown as { __activeSession?: ActiveSessionSnapshot }).__activeSession = snap;
+          return structuredClone(snap) as T;
+        }
+        case 'stop_active_session': {
+          (state as unknown as { __activeSession?: ActiveSessionSnapshot }).__activeSession = {
+            phase: 'idle',
+            sessionId: null,
+            target: null,
+            consoleSlug: null,
+            gameId: null,
+            gameTitle: null,
+            emulatorSlug: null,
+            pid: null,
+            startedAt: null,
+            lastHeartbeatAt: null,
+            elapsedSeconds: 0,
+          };
+          return true as T;
+        }
+        case 'record_runtime_verification': {
+          const req = args?.request as RecordRuntimeVerificationRequest;
+          const rec: RuntimeVerificationRecord = {
+            id: `rv-${Date.now()}`,
+            consoleId: `console-${req.consoleSlug}`,
+            consoleSlug: req.consoleSlug,
+            emulatorId: `emu-${req.emulatorSlug}`,
+            emulatorSlug: req.emulatorSlug,
+            gameId: req.gameId,
+            scopeKey: req.gameId ?? 'console',
+            featureKey: req.featureKey,
+            emulatorVersion: req.emulatorVersion,
+            status: req.status,
+            evidenceNotes: req.evidenceNotes,
+            verifiedAt: '2026-11-25T22:30:00Z',
+          };
+          if (req.featureKey === 'original_dashboard' && state.rpcs3Inspection.readiness) {
+            state.rpcs3Inspection.readiness.xmbRuntimeConfirmed =
+              req.status === 'runtime_confirmed';
+          }
+          return rec as T;
         }
         default:
           throw new Error(`Comando não suportado no transporte de teste: ${command}`);

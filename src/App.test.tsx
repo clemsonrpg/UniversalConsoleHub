@@ -37,21 +37,13 @@ describe('App Phase 1 functional UI flows (unit layer with injected test transpo
       expect(screen.getByText(/Matriz de Capacidades por Funcionalidade/i)).toBeInTheDocument();
     });
 
-    // Navigate to Library & register a game
+    // Navigate to Library & confirm zero manual registration form (auto-discovery only)
     fireEvent.click(screen.getByRole('button', { name: /Biblioteca/i }));
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: /Biblioteca Universal/i })).toBeInTheDocument();
     });
-    fireEvent.change(screen.getByLabelText(/Título do jogo/i), {
-      target: { value: "Demon's Souls" },
-    });
-    fireEvent.change(screen.getByLabelText(/Caminho local do jogo/i), {
-      target: { value: 'D:\\PS3\\DemonsSouls\\EBOOT.BIN' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: /Registrar Jogo/i }));
-    await waitFor(() => {
-      expect(screen.getByText("Demon's Souls")).toBeInTheDocument();
-    });
+    expect(screen.queryByText(/Registrar Jogo Local no Banco/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/Descoberta e Sincronização Automática/i)).toBeInTheDocument();
 
     // Navigate to Profile & update display name
     fireEvent.click(screen.getByRole('button', { name: /Perfil Universal/i }));

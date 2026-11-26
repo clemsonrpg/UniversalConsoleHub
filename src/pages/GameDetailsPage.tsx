@@ -1,9 +1,14 @@
 import { useState, type FormEvent } from 'react';
-import { Star } from 'lucide-react';
+import { Play, Star } from 'lucide-react';
 import { resolveCoverAssetUrl } from '../api/tauriClient';
 import { FilePathField } from '../components/FilePathField';
-import type { GameDetailsDto, UpdateGameMetadataRequest } from '../types/domain';
+import type {
+  ActiveSessionSnapshot,
+  GameDetailsDto,
+  UpdateGameMetadataRequest,
+} from '../types/domain';
 import {
+  formatGameAvailability,
   formatMetadataSource,
   formatPlaytime,
   formatSessionExitStatus,
@@ -12,18 +17,24 @@ import styles from './Pages.module.css';
 
 export interface GameDetailsPageProps {
   details: GameDetailsDto;
+  canLaunch?: boolean;
+  activeSession?: ActiveSessionSnapshot | null;
   onBack: () => void;
   onToggleFavorite: (gameId: string) => Promise<void>;
   onUpdateMetadata: (request: UpdateGameMetadataRequest) => Promise<void>;
   onSetCover: (gameId: string, sourceImagePath: string) => Promise<void>;
+  onLaunchGame?: (gameId: string, versionId?: string | null) => Promise<void>;
 }
 
 export function GameDetailsPage({
   details,
+  canLaunch = false,
+  activeSession,
   onBack,
   onToggleFavorite,
   onUpdateMetadata,
   onSetCover,
+  onLaunchGame,
 }: GameDetailsPageProps) {
   const { game, versions, sessions } = details;
   const [description, setDescription] = useState(game.description);
@@ -37,7 +48,26 @@ export function GameDetailsPage({
   const [busy, setBusy] = useState(false);
 
   const coverUrl = resolveCoverAssetUrl(game.coverPath);
-  const targetPhase = game.consoleSlug === 'ps3' ? 'Fase 3' : 'Fase 5';
+  const isMissing = game.installState === 'missing_files';
+  const sessionBusy = Boolean(activeSession && activeSession.phase !== 'idle');
+  const playableNow = game.consoleSlug === 'ps3' && canLaunch && !isMissing && Boolean(onLaunchGame);
+
+  const handleLaunchNow = async (versionId?: string | null) => {
+    if (!onLaunchGame) return;
+    setFeedback(null);
+    setBusy(true);
+    try {
+      await onLaunchGame(game.id, versionId ?? null);
+      setFeedback({
+        kind: 'ok',
+        text: `Inicializando '${game.title}' via RPCS3 com monitoramento de sessão ativo.`,
+      });
+    } catch (err) {
+      setFeedback({ kind: 'err', text: String(err) });
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const handleSaveMetadata = async (event: FormEvent) => {
     event.preventDefault();
@@ -93,6 +123,17 @@ export function GameDetailsPage({
           </p>
         </div>
         <div className={styles.actionsRow}>
+          {playableNow ? (
+            <button
+              type="button"
+              className={styles.btnPrimary}
+              disabled={busy || sessionBusy}
+              onClick={() => void handleLaunchNow(null)}
+            >
+              <Play size={14} aria-hidden="true" style={{ marginRight: 6, verticalAlign: 'middle' }} />
+              Jogar
+            </button>
+          ) : null}
           <button type="button" className={styles.btnSecondary} onClick={onBack}>
             Voltar
           </button>
@@ -113,11 +154,23 @@ export function GameDetailsPage({
         </div>
       </header>
 
-      <div className={`${styles.banner} ${styles.bannerInfo}`}>
-        Execução ao vivo de títulos pelo emulador real entra na <strong>{targetPhase}</strong>. Na
-        Fase 2, este painel gerencia metadados, capa local segura, versões e histórico de sessões
-        sem botões simulados de execução.
-      </div>
+      {isMissing ? (
+        <div className={`${styles.banner} ${styles.bannerError}`} role="note">
+          Arquivo do jogo ausente no disco ({formatGameAvailability(game.installState)}). Todo o
+          histórico de sessões e tempo jogado permanece preservado.
+        </div>
+      ) : game.consoleSlug === 'ps3' ? (
+        <div className={`${styles.banner} ${styles.bannerInfo}`} role="note">
+          {playableNow
+            ? 'PlayStation 3 pronto para execução direta via RPCS3 (--no-gui) com heartbeat e retorno automático ao Hub.'
+            : 'Configure o executável rpcs3.exe em Emuladores para habilitar a execução direta deste título.'}
+        </div>
+      ) : (
+        <div className={`${styles.banner} ${styles.bannerInfo}`} role="note">
+          Execução ao vivo deste console entra na <strong>Fase 5</strong>. Nenhum botão simulado de
+          execução é exibido antes da integração real do emulador.
+        </div>
+      )}
 
       {feedback ? (
         <div

@@ -3,7 +3,9 @@ import {
   DesktopRuntimeRequiredError,
   HubApiClient,
   resolveHubTransport,
+  subscribeHubRuntimeEvents,
 } from './api/tauriClient';
+import { ActiveSessionBanner } from './components/ActiveSessionBanner';
 import { AppShell } from './components/AppShell';
 import { useHubNavigation, type HubSectionId } from './hooks/useHubNavigation';
 import { ConsoleEnvironmentPage } from './pages/ConsoleEnvironmentPage';
@@ -18,17 +20,33 @@ import { SettingsPage } from './pages/SettingsPage';
 import { StatisticsPage } from './pages/StatisticsPage';
 import { TrophiesPage } from './pages/TrophiesPage';
 import type {
+  ActiveSessionSnapshot,
   ActivityEntryDto,
   BackupFileEntry,
   ConsoleEnvironmentDto,
+  ConsoleProfileOverviewDto,
   GameDetailsDto,
   HubBootstrapDto,
-  RegisterGameRequest,
+  RecordRuntimeVerificationRequest,
   ScanProgressEvent,
   StatisticsOverview,
   UpdateGameMetadataRequest,
   UpdateProfileRequest,
 } from './types/domain';
+
+const IDLE_SESSION: ActiveSessionSnapshot = {
+  phase: 'idle',
+  sessionId: null,
+  target: null,
+  consoleSlug: null,
+  gameId: null,
+  gameTitle: null,
+  emulatorSlug: null,
+  pid: null,
+  startedAt: null,
+  lastHeartbeatAt: null,
+  elapsedSeconds: 0,
+};
 
 export function App() {
   const clientResolution = useMemo(() => {
@@ -46,7 +64,9 @@ export function App() {
   const [section, setSection] = useState<HubSectionId>('home');
   const [selectedConsoleSlug, setSelectedConsoleSlug] = useState<string | null>(null);
   const [consoleEnv, setConsoleEnv] = useState<ConsoleEnvironmentDto | null>(null);
+  const [consoleProfile, setConsoleProfile] = useState<ConsoleProfileOverviewDto | null>(null);
   const [selectedGameDetails, setSelectedGameDetails] = useState<GameDetailsDto | null>(null);
+  const [activeSession, setActiveSession] = useState<ActiveSessionSnapshot>(IDLE_SESSION);
   const [statsOverview, setStatsOverview] = useState<StatisticsOverview | null>(null);
   const [activityItems, setActivityItems] = useState<ActivityEntryDto[]>([]);
   const [backups, setBackups] = useState<BackupFileEntry[]>([]);
@@ -88,11 +108,22 @@ export function App() {
     }
   }, [clientResolution.client]);
 
+  const refreshActiveConsoleEnv = useCallback(async () => {
+    if (!clientResolution.client || !selectedConsoleSlug) return;
+    const [env, profile] = await Promise.all([
+      clientResolution.client.getConsoleEnvironment(selectedConsoleSlug),
+      clientResolution.client.getConsoleProfile(selectedConsoleSlug).catch(() => null),
+    ]);
+    setConsoleEnv(env);
+    setConsoleProfile(profile);
+  }, [clientResolution.client, selectedConsoleSlug]);
+
   const handleSelectSection = useCallback(
     (next: HubSectionId) => {
       setSection(next);
       setSelectedConsoleSlug(null);
       setConsoleEnv(null);
+      setConsoleProfile(null);
       setSelectedGameDetails(null);
       if (next === 'statistics') {
         void refreshStatistics();
@@ -103,11 +134,41 @@ export function App() {
     [refreshBackups, refreshStatistics]
   );
 
-  useHubNavigation(section, handleSelectSection);
+  // Suspend Hub keyboard shortcuts while a live emulator session is active
+  useHubNavigation(section, handleSelectSection, activeSession.phase !== 'idle');
 
   useEffect(() => {
     void refreshBootstrap();
-  }, [refreshBootstrap]);
+    if (clientResolution.client) {
+      void clientResolution.client
+        .getActiveSession()
+        .then(setActiveSession)
+        .catch(() => setActiveSession(IDLE_SESSION));
+    }
+  }, [refreshBootstrap, clientResolution.client]);
+
+  useEffect(() => {
+    let cleanup: (() => void) | null = null;
+    void subscribeHubRuntimeEvents({
+      onSessionStarted: (snap) => setActiveSession(snap),
+      onSessionHeartbeat: (snap) => setActiveSession(snap),
+      onSessionExited: () => {
+        setActiveSession(IDLE_SESSION);
+        void refreshBootstrap();
+        void refreshActiveConsoleEnv();
+      },
+      onProfileSynced: () => {
+        void refreshBootstrap();
+        void refreshActiveConsoleEnv();
+      },
+    }).then((unlisten) => {
+      cleanup = unlisten;
+    });
+
+    return () => {
+      cleanup?.();
+    };
+  }, [refreshBootstrap, refreshActiveConsoleEnv]);
 
   const openConsoleEnvironment = useCallback(
     async (slug: string) => {
@@ -116,20 +177,18 @@ export function App() {
       setSelectedConsoleSlug(slug);
       setSelectedGameDetails(null);
       try {
-        const env = await clientResolution.client.getConsoleEnvironment(slug);
+        const [env, profile] = await Promise.all([
+          clientResolution.client.getConsoleEnvironment(slug),
+          clientResolution.client.getConsoleProfile(slug).catch(() => null),
+        ]);
         setConsoleEnv(env);
+        setConsoleProfile(profile);
       } catch (err) {
         setLoadError(String(err));
       }
     },
     [clientResolution.client]
   );
-
-  const refreshActiveConsoleEnv = useCallback(async () => {
-    if (!clientResolution.client || !selectedConsoleSlug) return;
-    const env = await clientResolution.client.getConsoleEnvironment(selectedConsoleSlug);
-    setConsoleEnv(env);
-  }, [clientResolution.client, selectedConsoleSlug]);
 
   const openGameDetails = useCallback(
     async (gameId: string) => {
@@ -191,13 +250,12 @@ export function App() {
     );
   }
 
+  const rpcs3Ready = Boolean(
+    bootstrap.rpcs3Inspection.configured && bootstrap.rpcs3Inspection.installation?.isValid
+  );
+
   const handleUpdateProfile = async (request: UpdateProfileRequest) => {
     await client.updateActiveProfile(request);
-    await refreshBootstrap();
-  };
-
-  const handleRegisterGame = async (request: RegisterGameRequest) => {
-    await client.registerGame(request);
     await refreshBootstrap();
   };
 
@@ -233,6 +291,7 @@ export function App() {
     recursive: boolean
   ) => {
     await client.addConsoleScanPath(consoleSlug, directoryPath, recursive);
+    await refreshBootstrap();
     await refreshActiveConsoleEnv();
   };
 
@@ -260,14 +319,49 @@ export function App() {
     await refreshActiveConsoleEnv();
   };
 
+  const handleSyncConsoleProfile = async (consoleSlug: string) => {
+    const report = await client.syncConsoleProfile(consoleSlug, 'manual');
+    await refreshBootstrap();
+    await refreshActiveConsoleEnv();
+    return report;
+  };
+
+  const handleLaunchConsoleSystem = async (consoleSlug: string) => {
+    const snap = await client.launchConsoleSystem(consoleSlug);
+    setActiveSession(snap);
+    await refreshActiveConsoleEnv();
+  };
+
+  const handleLaunchGame = async (gameId: string, versionId?: string | null) => {
+    const snap = await client.launchGame(gameId, versionId ?? null);
+    setActiveSession(snap);
+    await refreshActiveConsoleEnv();
+  };
+
+  const handleStopActiveSession = async () => {
+    await client.stopActiveSession();
+    const snap = await client.getActiveSession();
+    setActiveSession(snap);
+    await refreshBootstrap();
+    await refreshActiveConsoleEnv();
+  };
+
+  const handleRecordRuntimeVerification = async (request: RecordRuntimeVerificationRequest) => {
+    await client.recordRuntimeVerification(request);
+    await refreshBootstrap();
+    await refreshActiveConsoleEnv();
+  };
+
   const handleConfigureEmulator = async (slug: string, exePath: string) => {
     await client.configureEmulatorPath(slug, exePath);
     await refreshBootstrap();
+    await refreshActiveConsoleEnv();
   };
 
   const handleInspectRpcs3 = async () => {
     await client.inspectRpcs3();
     await refreshBootstrap();
+    await refreshActiveConsoleEnv();
   };
 
   const handleRegisterFirmware = async (
@@ -277,6 +371,7 @@ export function App() {
   ) => {
     await client.registerFirmwareFile(consoleSlug, emulatorSlug, filePath);
     await refreshBootstrap();
+    await refreshActiveConsoleEnv();
   };
 
   const handleUpdateSetting = async (key: string, value: string) => {
@@ -309,13 +404,18 @@ export function App() {
       profileHandle={bootstrap.profile.handle}
       transportKind={client.transportKind}
     >
+      <ActiveSessionBanner session={activeSession} onStopSession={handleStopActiveSession} />
+
       {selectedGameDetails ? (
         <GameDetailsPage
           details={selectedGameDetails}
+          canLaunch={selectedGameDetails.game.consoleSlug === 'ps3' && rpcs3Ready}
+          activeSession={activeSession}
           onBack={() => setSelectedGameDetails(null)}
           onToggleFavorite={handleToggleFavorite}
           onUpdateMetadata={handleUpdateGameMetadata}
           onSetCover={handleSetGameCover}
+          onLaunchGame={handleLaunchGame}
         />
       ) : null}
 
@@ -338,9 +438,12 @@ export function App() {
       {!selectedGameDetails && section === 'consoles' && selectedConsoleSlug && consoleEnv ? (
         <ConsoleEnvironmentPage
           environment={consoleEnv}
+          consoleProfile={consoleProfile}
+          activeSession={activeSession}
           onBack={() => {
             setSelectedConsoleSlug(null);
             setConsoleEnv(null);
+            setConsoleProfile(null);
           }}
           onOpenEmulators={() => handleSelectSection('emulators')}
           onOpenGame={(gameId) => void openGameDetails(gameId)}
@@ -349,6 +452,10 @@ export function App() {
           onRemoveScanPath={handleRemoveScanPath}
           onScanLibrary={handleScanLibrary}
           onUpdateConsoleSetting={handleUpdateConsoleSetting}
+          onSyncProfile={handleSyncConsoleProfile}
+          onLaunchSystem={handleLaunchConsoleSystem}
+          onLaunchGame={handleLaunchGame}
+          onRecordVerification={handleRecordRuntimeVerification}
         />
       ) : null}
 
@@ -356,9 +463,12 @@ export function App() {
         <LibraryPage
           consoles={bootstrap.consoles}
           games={bootstrap.games}
-          onRegisterGame={handleRegisterGame}
+          rpcs3Ready={rpcs3Ready}
+          activeSession={activeSession}
           onToggleFavorite={handleToggleFavorite}
           onOpenGame={(gameId) => void openGameDetails(gameId)}
+          onSelectConsole={(slug) => void openConsoleEnvironment(slug)}
+          onLaunchGame={(gameId) => handleLaunchGame(gameId, null)}
         />
       ) : null}
 
