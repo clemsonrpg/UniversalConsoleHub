@@ -599,3 +599,94 @@ export interface RecordRuntimeVerificationRequest {
   status: RuntimeVerificationStatus;
   evidenceNotes: string;
 }
+
+// ===== Phase 4 Domain Contracts (Universal Trophy Center & RPCS3 Read-Only Sync) =====
+
+export interface TrophySetSummaryRow {
+  id: string;
+  consoleSlug: string;
+  gameId: string;
+  gameTitle: string;
+  providerSlug: string;
+  externalSetId: string;
+  title: string;
+  detail: string;
+  iconPath: string | null;
+  totalCount: number;
+  unlockedCount: number;
+  bronzeUnlocked: number;
+  silverUnlocked: number;
+  goldUnlocked: number;
+  platinumUnlocked: number;
+  supportsPlatinum: boolean;
+  completionPercent: number;
+  updatedAt: string;
+}
+
+export interface DetailedTrophyRow {
+  id: string;
+  trophySetId: string | null;
+  gameId: string;
+  gameTitle: string;
+  consoleId: string;
+  consoleSlug: string;
+  providerId: string;
+  providerSlug: string;
+  externalTrophyId: string;
+  name: string;
+  description: string;
+  iconPath: string | null;
+  category: TrophyCategory;
+  rarityPercent: number | null;
+  origin: TrophyOrigin;
+  isHidden: boolean;
+  isUnlocked: boolean;
+  unlockedAt: string | null;
+  consoleLocalUserName: string | null;
+}
+
+export interface TrophyTotalsDto {
+  totalSets: number;
+  completedSets: number;
+  totalTrophies: number;
+  unlockedTrophies: number;
+  bronzeTotal: number;
+  bronzeUnlocked: number;
+  silverTotal: number;
+  silverUnlocked: number;
+  goldTotal: number;
+  goldUnlocked: number;
+  platinumTotal: number;
+  platinumUnlocked: number;
+  completionPercent: number;
+}
+
+export interface TrophyCenterOverviewDto {
+  providers: AchievementProviderRecord[];
+  sets: TrophySetSummaryRow[];
+  trophies: DetailedTrophyRow[];
+  recentUnlocks: DetailedTrophyRow[];
+  totals: TrophyTotalsDto;
+}
+
+export interface NewlyUnlockedTrophy {
+  trophyId: string;
+  externalTrophyId: string;
+  gameId: string;
+  gameTitle: string;
+  name: string;
+  category: TrophyCategory;
+  unlockedAt: string;
+  iconPath: string | null;
+}
+
+export interface TrophySyncReport {
+  consoleSlug: string;
+  setsSynced: number;
+  trophiesSynced: number;
+  unlocksRecorded: number;
+  newlyUnlocked: NewlyUnlockedTrophy[];
+  iconsCached: number;
+  diagnostics: string[];
+  syncedAt: string;
+}

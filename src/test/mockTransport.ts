@@ -10,6 +10,7 @@ import type {
   ConsoleScanPath,
   ConsoleSetting,
   ConsoleSyncReport,
+  DetailedTrophyRow,
   FirmwareRecordDto,
   GameDetailsDto,
   GameRecord,
@@ -23,6 +24,8 @@ import type {
   ScanProgressEvent,
   ScanSummaryDto,
   StatisticsOverview,
+  TrophyCenterOverviewDto,
+  TrophySyncReport,
   UpdateGameMetadataRequest,
   UpdateProfileRequest,
 } from '../types/domain';
@@ -828,6 +831,48 @@ export function createStatefulTestTransport(): HubTransport {
               req.status === 'runtime_confirmed';
           }
           return rec as T;
+        }
+        case 'get_trophy_center_overview': {
+          const overview: TrophyCenterOverviewDto = {
+            providers: structuredClone(state.achievementProviders),
+            sets: [],
+            trophies: [],
+            recentUnlocks: [],
+            totals: {
+              totalSets: 0,
+              completedSets: 0,
+              totalTrophies: 0,
+              unlockedTrophies: 0,
+              bronzeTotal: 0,
+              bronzeUnlocked: 0,
+              silverTotal: 0,
+              silverUnlocked: 0,
+              goldTotal: 0,
+              goldUnlocked: 0,
+              platinumTotal: 0,
+              platinumUnlocked: 0,
+              completionPercent: 0,
+            },
+          };
+          return overview as T;
+        }
+        case 'sync_console_trophies': {
+          const consoleSlug = String(args?.consoleSlug ?? 'ps3');
+          const report: TrophySyncReport = {
+            consoleSlug,
+            setsSynced: 0,
+            trophiesSynced: 0,
+            unlocksRecorded: 0,
+            newlyUnlocked: [],
+            iconsCached: 0,
+            diagnostics: [],
+            syncedAt: '2026-11-25T23:00:00Z',
+          };
+          return report as T;
+        }
+        case 'list_game_trophies': {
+          const rows: DetailedTrophyRow[] = [];
+          return rows as T;
         }
         default:
           throw new Error(`Comando não suportado no transporte de teste: ${command}`);

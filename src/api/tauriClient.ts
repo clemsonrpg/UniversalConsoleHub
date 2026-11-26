@@ -12,12 +12,14 @@ import type {
   ConsoleScanPath,
   ConsoleSetting,
   ConsoleSyncReport,
+  DetailedTrophyRow,
   EmulatorRecord,
   FirmwareRecordDto,
   GameDetailsDto,
   GameRecord,
   HubBootstrapDto,
   LiveRestoreReport,
+  NewlyUnlockedTrophy,
   PlayerProfile,
   RecordRuntimeVerificationRequest,
   RegisterGameRequest,
@@ -28,6 +30,8 @@ import type {
   SessionExitedPayload,
   StatisticsOverview,
   SyncTrigger,
+  TrophyCenterOverviewDto,
+  TrophySyncReport,
   UpdateGameMetadataRequest,
   UpdateProfileRequest,
 } from '../types/domain';
@@ -267,6 +271,22 @@ export class HubApiClient {
   ): Promise<RuntimeVerificationRecord> {
     return this.transport.invoke('record_runtime_verification', { request });
   }
+
+  // ===== Phase 4 IPC Client Methods (3 new commands) =====
+
+  syncConsoleTrophies(consoleSlug: string): Promise<TrophySyncReport> {
+    return this.transport.invoke('sync_console_trophies', { consoleSlug });
+  }
+
+  getTrophyCenterOverview(consoleSlug?: string | null): Promise<TrophyCenterOverviewDto> {
+    return this.transport.invoke('get_trophy_center_overview', {
+      consoleSlug: consoleSlug ?? null,
+    });
+  }
+
+  listGameTrophies(gameId: string): Promise<DetailedTrophyRow[]> {
+    return this.transport.invoke('list_game_trophies', { gameId });
+  }
 }
 
 export interface HubRuntimeEventHandlers {
@@ -274,6 +294,8 @@ export interface HubRuntimeEventHandlers {
   onSessionHeartbeat?: (snapshot: ActiveSessionSnapshot) => void;
   onSessionExited?: (payload: SessionExitedPayload) => void;
   onProfileSynced?: (report: ConsoleSyncReport) => void;
+  onTrophiesSynced?: (report: TrophySyncReport) => void;
+  onTrophiesUnlocked?: (unlocked: NewlyUnlockedTrophy[]) => void;
 }
 
 export async function subscribeHubRuntimeEvents(
@@ -309,6 +331,20 @@ export async function subscribeHubRuntimeEvents(
     unlisteners.push(
       await listen<ConsoleSyncReport>('profile:synced', (evt) =>
         handlers.onProfileSynced?.(evt.payload)
+      )
+    );
+  }
+  if (handlers.onTrophiesSynced) {
+    unlisteners.push(
+      await listen<TrophySyncReport>('trophies:synced', (evt) =>
+        handlers.onTrophiesSynced?.(evt.payload)
+      )
+    );
+  }
+  if (handlers.onTrophiesUnlocked) {
+    unlisteners.push(
+      await listen<NewlyUnlockedTrophy[]>('trophies:unlocked', (evt) =>
+        handlers.onTrophiesUnlocked?.(evt.payload)
       )
     );
   }

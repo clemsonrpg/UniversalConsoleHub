@@ -103,6 +103,10 @@ pub fn run() {
             ipc::commands::get_active_session,
             ipc::commands::stop_active_session,
             ipc::commands::record_runtime_verification,
+            // Phase 4 commands (3 — total 41)
+            ipc::commands::sync_console_trophies,
+            ipc::commands::get_trophy_center_overview,
+            ipc::commands::list_game_trophies,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Universal Console Hub");

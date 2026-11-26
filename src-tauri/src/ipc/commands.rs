@@ -12,6 +12,7 @@ use crate::application::services::{
     ActivityEntryDto, AppServices, ConsoleDetailsDto, HubBootstrapDto, RegisterGameRequest,
     Rpcs3InspectionDto, UpdateProfileRequest,
 };
+use crate::application::trophy_sync_service::TrophyCenterOverviewDto;
 use crate::domain::console::ConsoleRecord;
 use crate::domain::console_profile::{ConsoleSyncReport, SyncTrigger};
 use crate::domain::emulator::EmulatorRecord;
@@ -23,10 +24,11 @@ use crate::domain::error::DomainError;
 use crate::domain::player::{GameRecord, PlayerProfile};
 use crate::domain::scanner::{ScanProgressEvent, ScanSummaryDto};
 use crate::domain::session::{ActiveSessionSnapshot, StatisticsOverview};
-use crate::domain::trophy::{AchievementProviderRecord, TrophyRecord};
+use crate::domain::trophy::{AchievementProviderRecord, TrophyRecord, TrophySyncReport};
 use crate::infrastructure::db::console_env_repo::{GameDetailsDto, UpdateGameMetadataInput};
 use crate::infrastructure::db::manager::{BackupInspectionReport, BackupReport, LiveRestoreReport};
 use crate::infrastructure::db::repositories::FirmwareRecordDto;
+use crate::infrastructure::db::trophy_repo::DetailedTrophyRow;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -411,4 +413,42 @@ pub fn record_runtime_verification(
             request.status,
             &request.evidence_notes,
         )
+}
+
+// ===== Phase 4 Commands (3 new — total 41) =====
+
+#[tauri::command]
+pub async fn sync_console_trophies(
+    console_slug: String,
+    app_handle: AppHandle,
+    services: State<'_, AppServices>,
+) -> Result<TrophySyncReport, DomainError> {
+    let trophy_sync = services.trophy_sync_service().clone();
+    let report =
+        tokio::task::spawn_blocking(move || trophy_sync.sync_console_trophies(&console_slug))
+            .await
+            .map_err(|e| DomainError::Process(format!("trophy sync task failed: {e}")))??;
+    let _ = app_handle.emit("trophies:synced", &report);
+    if !report.newly_unlocked.is_empty() {
+        let _ = app_handle.emit("trophies:unlocked", &report.newly_unlocked);
+    }
+    Ok(report)
+}
+
+#[tauri::command]
+pub fn get_trophy_center_overview(
+    console_slug: Option<String>,
+    services: State<'_, AppServices>,
+) -> Result<TrophyCenterOverviewDto, DomainError> {
+    services
+        .trophy_sync_service()
+        .get_trophy_center_overview(console_slug.as_deref())
+}
+
+#[tauri::command]
+pub fn list_game_trophies(
+    game_id: String,
+    services: State<'_, AppServices>,
+) -> Result<Vec<DetailedTrophyRow>, DomainError> {
+    services.trophy_sync_service().list_game_trophies(&game_id)
 }

@@ -124,4 +124,19 @@ describe('tauriClient transport resolution and typed dispatch', () => {
       },
     });
   });
+
+  it('dispatches Phase 4 trophy sync, trophy center overview, and game trophies commands', async () => {
+    const invokeMock = vi.fn().mockResolvedValue({ ok: true });
+    const client = new HubApiClient({ kind: 'injected_test', invoke: invokeMock });
+
+    await client.syncConsoleTrophies('ps3');
+    await client.getTrophyCenterOverview('ps3');
+    await client.getTrophyCenterOverview();
+    await client.listGameTrophies('game-ps3-1');
+
+    expect(invokeMock).toHaveBeenCalledWith('sync_console_trophies', { consoleSlug: 'ps3' });
+    expect(invokeMock).toHaveBeenCalledWith('get_trophy_center_overview', { consoleSlug: 'ps3' });
+    expect(invokeMock).toHaveBeenCalledWith('get_trophy_center_overview', { consoleSlug: null });
+    expect(invokeMock).toHaveBeenCalledWith('list_game_trophies', { gameId: 'game-ps3-1' });
+  });
 });
