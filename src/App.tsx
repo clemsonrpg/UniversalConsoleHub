@@ -786,8 +786,12 @@ function AppThemedWorkspace(props: AppThemedWorkspaceProps) {
         {!selectedGameDetails && section === 'home' ? (
           <HomePage
             data={bootstrap}
+            rpcs3Ready={rpcs3Ready}
+            activeSession={activeSession}
             onNavigate={onSelectSection}
             onSelectConsole={onOpenConsoleEnvironment}
+            onOpenGame={onOpenGame}
+            onLaunchGame={(gameId) => onLaunchGame(gameId, null)}
           />
         ) : null}
 
@@ -795,6 +799,7 @@ function AppThemedWorkspace(props: AppThemedWorkspaceProps) {
           <ConsolesPage
             consoles={bootstrap.consoles}
             emulators={bootstrap.emulators}
+            games={bootstrap.games}
             onSelectConsole={onOpenConsoleEnvironment}
           />
         ) : null}
