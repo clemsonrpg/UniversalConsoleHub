@@ -19,7 +19,10 @@ use super::session::{
     compute_elapsed_seconds_utc, ActiveSessionPhase, LaunchTarget,
     EXIT_STATUS_RECOVERED_AFTER_CRASH,
 };
-use super::trophy::{ensure_immutable_origin, TrophyOrigin};
+use super::trophy::{
+    compute_trophy_completion_percent, ensure_immutable_origin, ParsedTrophyDef, ParsedTrophySet,
+    TrophyCategory, TrophyOrigin,
+};
 
 #[test]
 fn multi_capability_console_supports_simultaneous_non_exclusive_states() {
@@ -337,4 +340,58 @@ fn live_session_state_machine_enforces_single_active_session_transitions() {
     let game_json = serde_json::to_value(&game_target).expect("serialize DirectGameBoot");
     assert_eq!(game_json["kind"], "direct_game_boot");
     assert_eq!(game_json["gameId"], "game-1");
+}
+
+#[test]
+fn trophy_domain_maps_ps3_ttypes_computes_honest_completion_and_platinum_support() {
+    assert_eq!(
+        TrophyCategory::from_ps3_ttype("B").unwrap(),
+        TrophyCategory::Bronze
+    );
+    assert_eq!(
+        TrophyCategory::from_ps3_ttype("S").unwrap(),
+        TrophyCategory::Silver
+    );
+    assert_eq!(
+        TrophyCategory::from_ps3_ttype("G").unwrap(),
+        TrophyCategory::Gold
+    );
+    assert_eq!(
+        TrophyCategory::from_ps3_ttype("P").unwrap(),
+        TrophyCategory::Platinum
+    );
+    assert!(TrophyCategory::from_ps3_ttype("X").is_err());
+
+    assert_eq!(compute_trophy_completion_percent(0, 0), 0);
+    assert_eq!(compute_trophy_completion_percent(5, 10), 50);
+    assert_eq!(compute_trophy_completion_percent(15, 10), 100);
+
+    let set = ParsedTrophySet {
+        console_slug: "ps3".to_string(),
+        native_user_key: "00000001".to_string(),
+        external_set_id: "NPWR00637_00".to_string(),
+        title: "Demon's Souls".to_string(),
+        detail: String::new(),
+        icon_path: None,
+        trophies: vec![
+            ParsedTrophyDef {
+                external_trophy_id: "000".to_string(),
+                name: "Platinum".to_string(),
+                description: "All".to_string(),
+                category: TrophyCategory::Platinum,
+                is_hidden: false,
+                icon_path: None,
+            },
+            ParsedTrophyDef {
+                external_trophy_id: "001".to_string(),
+                name: "Hidden Boss".to_string(),
+                description: "Secret".to_string(),
+                category: TrophyCategory::Bronze,
+                is_hidden: true,
+                icon_path: None,
+            },
+        ],
+        unlocks: vec![],
+    };
+    assert!(set.supports_platinum());
 }
