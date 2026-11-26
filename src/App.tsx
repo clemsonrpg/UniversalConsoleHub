@@ -21,6 +21,7 @@ import pageStyles from './pages/Pages.module.css';
 import { ProfilePage } from './pages/ProfilePage';
 import { SettingsPage } from './pages/SettingsPage';
 import { StatisticsPage } from './pages/StatisticsPage';
+import { ThemesPage } from './pages/ThemesPage';
 import { TrophiesPage } from './pages/TrophiesPage';
 import trophyStyles from './pages/TrophiesPage.module.css';
 import { ThemeProvider } from './themes/ThemeProvider';
@@ -720,6 +721,7 @@ function AppThemedWorkspace(props: AppThemedWorkspaceProps) {
         profileDisplayName={bootstrap.profile.displayName}
         profileHandle={bootstrap.profile.handle}
         transportKind={client.transportKind}
+        showActionBar={bootstrap.settings['ui.show_action_bar'] !== 'false'}
       >
         <ActiveSessionBanner
           session={activeSession}
@@ -829,12 +831,18 @@ function AppThemedWorkspace(props: AppThemedWorkspaceProps) {
 
         {!selectedGameDetails && section === 'library' ? (
           <LibraryPage
-            key={bootstrap.settings['theme.active_id'] ?? 'universal-modern'}
+            key={`${bootstrap.settings['theme.active_id'] ?? 'universal-modern'}-${bootstrap.settings['ui.library_default_view'] ?? 'auto'}`}
             consoles={bootstrap.consoles}
             games={bootstrap.games}
             rpcs3Ready={rpcs3Ready}
             defaultView={
-              bootstrap.settings['theme.active_id'] === 'xmb-inspired' ? 'list' : 'grid'
+              bootstrap.settings['ui.library_default_view'] === 'list'
+                ? 'list'
+                : bootstrap.settings['ui.library_default_view'] === 'grid'
+                  ? 'grid'
+                  : bootstrap.settings['theme.active_id'] === 'xmb-inspired'
+                    ? 'list'
+                    : 'grid'
             }
             activeSession={activeSession}
             onToggleFavorite={onToggleFavorite}
@@ -868,12 +876,7 @@ function AppThemedWorkspace(props: AppThemedWorkspaceProps) {
           />
         ) : null}
 
-        {!selectedGameDetails && section === 'themes' ? (
-          <section className={pageStyles.section}>
-            <h1 className={pageStyles.title}>Gerenciador de Temas</h1>
-            <p className={pageStyles.muted}>Carregando galeria de temas...</p>
-          </section>
-        ) : null}
+        {!selectedGameDetails && section === 'themes' ? <ThemesPage /> : null}
 
         {!selectedGameDetails && section === 'emulators' ? (
           <EmulatorsPage
@@ -890,10 +893,19 @@ function AppThemedWorkspace(props: AppThemedWorkspaceProps) {
           <SettingsPage
             settings={bootstrap.settings}
             backups={backups}
+            appVersion={bootstrap.version}
+            transportKind={client.transportKind}
+            gamesCount={bootstrap.games.length}
+            consolesCount={bootstrap.consoles.length}
+            rpcs3Ready={rpcs3Ready}
             onUpdateSetting={onUpdateSetting}
             onCreateBackup={onCreateBackup}
             onInspectBackup={onInspectBackup}
             onRestoreBackup={onRestoreBackup}
+            onOpenThemes={() => onSelectSection('themes')}
+            onOpenLibrary={() => onSelectSection('library')}
+            onOpenEmulators={() => onSelectSection('emulators')}
+            onOpenTrophies={() => onSelectSection('trophies')}
           />
         ) : null}
       </AppShell>

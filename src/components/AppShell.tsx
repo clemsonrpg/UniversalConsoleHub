@@ -25,6 +25,7 @@ export interface AppShellProps {
   profileDisplayName: string;
   profileHandle: string;
   transportKind: 'tauri' | 'injected_test';
+  showActionBar?: boolean;
   children: ReactNode;
 }
 
@@ -60,6 +61,7 @@ export function AppShell({
   profileDisplayName,
   profileHandle,
   transportKind,
+  showActionBar = true,
   children,
 }: AppShellProps) {
   const { effectiveTheme, previewTheme, activeOverrides, applyPreview, cancelPreview } = useTheme();
@@ -141,7 +143,7 @@ export function AppShell({
       <main className={styles.main} data-focus-scope="main">
         {children}
       </main>
-      <ControllerActionBar />
+      {showActionBar ? <ControllerActionBar /> : null}
     </div>
   );
 

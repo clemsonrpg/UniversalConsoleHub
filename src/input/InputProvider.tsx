@@ -432,6 +432,10 @@ export function InputProvider({
   return <InputContext.Provider value={value}>{children}</InputContext.Provider>;
 }
 
+export function useOptionalInput(): InputContextValue | null {
+  return useContext(InputContext);
+}
+
 export function useInput(): InputContextValue {
   const ctx = useContext(InputContext);
   if (!ctx) {
