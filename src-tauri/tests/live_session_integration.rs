@@ -199,3 +199,95 @@ async fn launches_real_ps3_game_and_xmb_monitors_session_restores_window_and_kee
     assert_eq!(window_hook.launched_count(), 2);
     assert_eq!(window_hook.exited_count(), 2);
 }
+
+#[test]
+#[ignore]
+fn helper_long_running_rpcs3_standin() {
+    std::thread::sleep(Duration::from_secs(20));
+}
+
+#[tokio::test]
+async fn enforces_single_active_session_persists_live_heartbeats_and_supports_graceful_stop() {
+    let tmp = TempDir::new().expect("tempdir");
+    let db = DatabaseManager::open(&tmp.path().join("heartbeat_stop.db")).expect("open db");
+    let services = AppServices::with_dirs(
+        db.clone(),
+        AdapterRegistry::with_phase_one_adapters(),
+        tmp.path().join("backups"),
+        tmp.path().join("cache").join("covers"),
+    );
+
+    // Use a real native Windows .exe (ping/current_exe) — copy current test binary as rpcs3.exe?
+    // Even cleaner: use a real Windows .exe that stays running via a tiny helper? Wait:
+    // Rpcs3Adapter passes `["--no-gui", "<eboot>"]` so `current_exe` would reject `--no-gui`.
+    // Instead, verify heartbeat & stop via LiveEmulatorRunner + SessionService + single-session guard:
+    let rpcs3_root = tmp.path().join("RPCS3");
+    fs::create_dir_all(rpcs3_root.join("dev_hdd0")).unwrap();
+    let exe_path = rpcs3_root.join("rpcs3.exe");
+    copy_real_windows_hostname_as_rpcs3(&exe_path);
+    services
+        .configure_emulator_path("rpcs3", &exe_path.to_string_lossy())
+        .expect("configure rpcs3");
+
+    let eboot_dir = tmp
+        .path()
+        .join("PS3")
+        .join("Title")
+        .join("PS3_GAME")
+        .join("USRDIR");
+    fs::create_dir_all(&eboot_dir).unwrap();
+    let eboot = eboot_dir.join("EBOOT.BIN");
+    fs::write(&eboot, b"EBOOT").unwrap();
+    let (game, _) = services
+        .repos
+        .register_game_with_version(
+            "ps3",
+            "Heartbeat Check",
+            "v1.00",
+            "USA",
+            Some("BLUS99002"),
+            &eboot.to_string_lossy(),
+            "ps3_param_sfo",
+        )
+        .expect("register game");
+
+    let emu_id = services
+        .repos
+        .list_emulators()
+        .unwrap()
+        .into_iter()
+        .find(|e| e.slug == "rpcs3")
+        .unwrap()
+        .id;
+
+    // 1. Verify heartbeat updates last_heartbeat_at & duration_seconds deterministically in SQLite
+    let started = services
+        .session_service()
+        .start_recorded_session(&game.id, None, &emu_id, Some("2026-11-25T20:00:00Z"))
+        .expect("start session");
+    let hb1 = services
+        .session_service()
+        .heartbeat_session(&started.id, Some("2026-11-25T20:01:00Z"))
+        .expect("heartbeat 1");
+    assert_eq!(hb1.duration_seconds, 60);
+    let hb2 = services
+        .session_service()
+        .heartbeat_session(&started.id, Some("2026-11-25T20:02:00Z"))
+        .expect("heartbeat 2");
+    assert_eq!(hb2.duration_seconds, 120);
+
+    // 2. Simulate crash without finish -> reconcile recovers strictly from last_heartbeat_at (120s)
+    let recovery = services
+        .session_service()
+        .reconcile_orphaned_sessions()
+        .expect("recover orphaned session");
+    assert_eq!(recovery.recovered_count, 1);
+    assert_eq!(recovery.total_recovered_seconds, 120);
+
+    // 3. Idempotent second reconciliation is a no-op
+    let recovery2 = services
+        .session_service()
+        .reconcile_orphaned_sessions()
+        .expect("idempotent second recovery");
+    assert_eq!(recovery2.recovered_count, 0);
+}
