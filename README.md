@@ -1,43 +1,76 @@
-# Universal Console Hub 3.0
+# Universal Console Hub (UCH)
 
-**The Authentic Multi-Console Ecosystem for Windows 10/11**
+O **Universal Console Hub (UCH)** é um projeto criado para trazer de volta a experiência de utilizar um console de verdade no PC.
 
-Universal Console Hub é um aplicativo desktop local-first (Tauri 2 + Rust + SQLite + React + TypeScript + Vite) projetado para unificar emulação autêntica de consoles, biblioteca multiplataforma, perfil universal de jogador, estatísticas reais de sessões, ecossistema de controles Windows e central de troféus/conquistas.
+A ideia é ir além de simplesmente abrir jogos em emuladores. O objetivo é construir um ambiente completo inspirado na experiência original do Xbox 360, com dashboard, Xbox Guide, perfis, conquistas, amigos, mensagens, partidas e outros recursos que faziam parte do console.
 
-## Filosofia de Produto
+O projeto utiliza o Xenia como base para executar jogos de Xbox 360 e desenvolve uma estrutura própria de serviços para conectar todas essas funcionalidades.
 
-- **Fidelidade máxima aos consoles reais:** O Hub organiza, valida e inicia emuladores reais preservando inicializações, dashboards, sons e menus originais sempre que suportados pela emulação.
-- **Zero dashboards falsas:** O Hub tem sua própria interface desktop de gerenciamento; nunca substitui ou simula o sistema operacional original de um console fingindo ser emulação.
-- **Zero ativos proprietários:** Este repositório não contém nem distribui BIOS, firmware (`PS3UPDAT.PUP`), NAND, MCPX, chaves criptográficas ou jogos protegidos. O usuário fornece seus próprios arquivos obtidos legalmente.
-- **Transparência técnica:** Capacidades de consoles e emuladores são modeladas por funcionalidade independente e distinguem documentação upstream, presença de arquivos, construção de comando e confirmação em tempo de execução.
+## O que já foi desenvolvido
 
-## Stack Tecnológica
+### Experiência Xbox 360
+- Integração com o dashboard original do Xbox 360.
+- Abertura do Xbox Guide utilizando o botão Guide do controle.
+- Navegação pelo Guide com os controles tradicionais do console.
+- Integração com o perfil do jogador.
+- Leitura de informações e conquistas dos jogos.
 
-- **Desktop & Backend:** Tauri 2 + Rust (`x86_64-pc-windows-msvc`)
-- **Banco de Dados:** SQLite embarcado (`rusqlite` bundled, WAL, `STRICT`, `foreign_keys = ON`, migrations versionadas, backup/restauração via `VACUUM INTO`)
-- **Frontend:** React + TypeScript estrito + Vite + CSS Modular
-- **Testes:** Rust Unit (`cargo test --lib`), Real Backend Integration (`cargo test --test '*'`), Frontend Unit (Vitest), UI E2E (Playwright)
+### Perfis e recursos sociais
+- Sistema próprio de perfis e identidade Xbox.
+- Lista de amigos e solicitações de amizade.
+- Envio e recebimento de mensagens.
+- Status de presença e atividade nos jogos.
+- Notificações exibidas dentro da experiência do Xbox 360.
+- Sistema próprio de sessões e convites.
 
-## Documentação
+### Rede Universal Live
+O UCH possui uma infraestrutura própria de serviços, independente dos servidores oficiais da Microsoft.
 
-- [Arquitetura](docs/ARCHITECTURE.md) · [ADR-001](docs/adr/0001-clean-architecture-tauri2.md)
-- [Roadmap](docs/ROADMAP.md)
-- [Matriz de Compatibilidade](docs/COMPATIBILITY_MATRIX.md)
-- [Integração de Emuladores](docs/EMULATOR_INTEGRATION.md)
-- [Sistema de Troféus](docs/TROPHY_SYSTEM.md)
-- [Perfil Universal](docs/UNIVERSAL_PROFILE.md)
-- [Arquitetura de Temas](docs/THEME_ARCHITECTURE.md)
-- [Navegação por Controle & Modo TV](docs/GAMEPAD_NAVIGATION.md)
-- [Schema do Banco de Dados](docs/DATABASE_SCHEMA.md)
-- [Estratégia de Testes](docs/TESTING.md)
-- [Skills & Workflow](docs/SKILLS_AND_WORKFLOW.md)
-- [Limitações Conhecidas](docs/KNOWN_LIMITATIONS.md)
+Entre os recursos desenvolvidos estão:
+- Conexão entre diferentes instalações do UCH.
+- Descoberta de outros usuários na rede local.
+- Pareamento seguro entre computadores.
+- Sincronização de amigos, mensagens e presença.
+- Sistema de sessões e convites.
+- Estrutura para partidas multiplayer pela rede local.
 
-## Status Atual
+### Jogos e conquistas
+- Integração com informações dos jogos executados no Xenia.
+- Leitura de dados de perfis e arquivos de conquistas.
+- Identificação dos jogos em execução.
+- Integração inicial com o sistema de desbloqueio de conquistas.
 
-- **Fase 1 (Project Foundation):** Concluída e auditada (`10` commits preservados em `main`: `d7b059a..00488f8`) — fundação Tauri 2/Rust/React/SQLite (`19` tabelas `STRICT`), contrato de adaptadores, preparação RPCS3 em 4 estágios, Design System "Obsidian Hardware" e telas base.
-- **Fase 2 (Universal Player, Console Environments & Sessions Foundation — Opção A):** Concluída e auditada (`11` commits em `main`: `c5f6660..a85a6f2`) — `Migration 0002` (`22` tabelas `STRICT` + índices aditivos), ambientes independentes por console (`ConsoleEnvironmentPage`), scanner assíncrono com parser binário `PARAM.SFO`, `CoverCache` seguro via `protocol-asset`, `GameDetailsPage`, `StatisticsPage`, recuperação idempotente de sessões órfãs via `last_heartbeat_at` e restauração SQLite ao vivo pela UI com confirmação e rollback automático.
-- **Fase 3 (Perfis Reais de Console + Integração Ao Vivo PS3 via RPCS3 — Opção A):** Concluída e auditada (`12` commits em `main`: `1b221cf..e46719b`) — `Migration 0003` (`24` tabelas `STRICT`: `console_profiles` #23 e `console_local_users` #24), `Ps3ProfileProvider` somente leitura, `ConsoleProfileSyncService` idempotente preservando histórico em `missing_on_disk`, `LiveEmulatorRunner` + `WindowsWindowManager`, `LiveSessionOrchestrator` (sessão única, heartbeat 60s, pós-sync, 7 verificações independentes), 38 comandos IPC e remoção completa do formulário manual da `LibraryPage`. *Nota honesta:* a confirmação runtime final do XMB (`original_dashboard`) e da compatibilidade individual de títulos (`per_game_compatibility`) depende de execução manual com `rpcs3.exe`, firmware `PS3UPDAT.PUP` e jogos PS3 do usuário.
-- **Fase 4 (Central Universal de Troféus integrada às Sessões Reais do PS3 — Opção A):** Concluída e verificada nas 3 camadas automatizadas + auditoria prática no `.exe` standalone (`7` Tasks TDD) — `Migration 0004` (`25` tabelas `STRICT`: `trophy_sets` #25 + `trophies.trophy_set_id`/`is_hidden` + ativação do `EmulatorAchievementProvider` offline), `Rpcs3TrophyReader` estritamente somente leitura (`TROPCONF.SFM`/`TROP.SFM` XML + `TROPUSR.DAT` binário big-endian checado por limites + `ICON0.PNG`/`TROPxxx.PNG`), `TrophySyncService` idempotente (nunca regride desbloqueios, preserva timestamp UTC mais antigo, vincula `console_local_user_id`, cacheia ícones via `CoverCache`, recalcula `completion_percent`), acoplamento automático pós-sessão no `LiveSessionOrchestrator`, 41 comandos IPC + eventos `trophies:synced`/`trophies:unlocked`, e `TrophiesPage` completa (progresso geral/por jogo, Platina/Ouro/Prata/Bronze, filtros, ocultação de spoilers com toggle explícito, raridade honesta `Local / Offline` e linha do tempo cronológica).
-- **Reformulação Visual Completa, Sistema de Temas Extensível & Experiência 100% por Controle (v3.0):** Concluída e verificada — Motor de temas declarativo seguro (backend Rust `ThemePackageService` validando manifesto JSON e magic bytes PNG/JPEG/WebP sem execução de código arbitrário, `assetProtocol` `$APPLOCALDATA/themes/**`, 4 temas nativos com layouts distintos: *Universal Modern*, *Console Classic*, *Minimal* e *XMB Inspired* sem ativos proprietários, prévia ao vivo, personalização por tema e importação/remoção local), navegação completa por controle (monitor XInput não-exclusivo nativo Windows + fallback W3C Gamepad API, hot-plug, glyphs dinâmicos Xbox/PlayStation/Nintendo/Genérico, deadzone radial, anti-repetição, mapeamento configurável, foco espacial 2D, pilha de foco em modais e handoff com pausa/dreno de 350ms integrado ao `LiveSessionOrchestrator`), modos **Desktop ↔ Fullscreen TV (10-foot)** preservando estado e página, 45 comandos IPC, `ThemesPage` dedicada e `SettingsPage` reorganizada em 8 categorias reais.
-- **Próxima Fase (Fase 5 — Opção A):** Consoles jogáveis adicionais, um por vez com validação real (PCSX2, Dolphin, xemu, Xenia Canary, shadPS4).
+### Marketplace e conteúdo
+- Catálogo próprio de conteúdo.
+- Sistema de download com suporte a pausa e retomada.
+- Verificação de integridade dos arquivos.
+- Instalação de conteúdo com mecanismos de proteção.
+
+## Testes realizados
+
+O projeto já passou por testes automatizados e testes práticos envolvendo diferentes partes do sistema.
+
+Também foram realizados testes com duas instâncias do Hub e duas instâncias do Xenia funcionando simultaneamente no mesmo computador, incluindo comunicação entre usuários, mensagens e notificações.
+
+A infraestrutura de rede e integração com o System Link já possui uma implementação inicial, mas a experiência multiplayer entre dois computadores físicos ainda precisa ser validada.
+
+## Em desenvolvimento
+
+O UCH continua em desenvolvimento. Algumas das próximas etapas são:
+
+- Aperfeiçoar a integração com o Xbox Guide original.
+- Corrigir diferenças entre o estado de conexão do Hub e o exibido pelo Guide.
+- Validar partidas multiplayer entre computadores diferentes.
+- Expandir a integração com os recursos originais do Xbox 360.
+- Melhorar a estabilidade e a compatibilidade com jogos.
+- Continuar desenvolvendo os recursos sociais e de rede.
+
+## Filosofia do projeto
+
+O objetivo do UCH não é substituir a experiência do Xbox 360 por uma interface moderna de PC.
+
+A proposta é preservar a identidade do console: o dashboard original, o Guide, os controles, os perfis e a maneira como os recursos se conectam dentro do próprio ambiente do Xbox.
+
+O Hub funciona como a infraestrutura que torna tudo isso possível, enquanto o Xenia permite executar os jogos.
+
+**A ideia é fazer o PC se comportar cada vez mais como um Xbox 360 completo, e não apenas como um computador rodando jogos de Xbox 360.**
